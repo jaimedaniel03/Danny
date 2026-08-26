@@ -1,0 +1,171 @@
+# 00 — Executive Summary
+
+---
+
+## What was asked for
+
+An AI calling agent for home, auto, business, health, and life insurance. Every
+connector wired in. Voice cloning via Fish Audio. A full blueprint, a Bay Area VC
+and CEO critical breakdown, a foundation, and a timeframe.
+
+## What is here
+
+All of it, plus one substantive disagreement with the default shape of the idea —
+stated up front rather than buried, because the disagreement is the most useful
+thing in the package.
+
+---
+
+## The three findings that reorganized the design
+
+### 1. The legal constraint is not a footnote. It is the architecture.
+
+An AI voice is an **artificial voice** under TCPA §227(b) — the FCC said so
+explicitly in February 2024. Artificial voice to a wireless number requires
+**prior express written consent**. Statutory damages are $500 per call, $1,500
+for willful violations, uncapped, with a private right of action and a mature
+plaintiff's bar.
+
+10,000 dials with defective consent is a **$5M–$15M** exposure.
+
+So the compliance gate is not a hardening pass scheduled for later. It is the
+first module in the repo, it has no override flag, and CI blocks any merge that
+weakens it. `src/compliance/gate.ts`, 40 self-tests, all green.
+
+### 2. The economics say the opposite of what the demo says
+
+**A cold auto policy costs roughly $3,000 to acquire and pays roughly $230.**
+
+Not because AI calling is expensive — the AI is $15 of that $3,000. Because
+**leads** are 99.5% of the cost, and an AI dialer applied to a purchased-lead
+funnel does not fix the economics. It burns your lead supply ten times faster at
+the same loss rate.
+
+The product therefore cannot be "call more." It has to be "call the leads that
+cost nothing": your existing book, your own web forms, your inbound calls, and
+referrals.
+
+### 3. Those are the same leads where consent is clean
+
+This is the finding that makes the whole thing work. The compliance-safe path and
+the profitable path are **the same path**. The gate is not a tax on the product;
+it is a map of where the product works.
+
+Own-book cross-sell: $0 lead cost, 25–40% contact rate, ~40x return on variable
+cost, and written consent obtainable at policy issue and renewal.
+
+Cold purchased leads: illegal without written consent, unprofitable with it.
+
+---
+
+## What to build
+
+**An AI producer that works an agency's existing book and its own inbound leads**,
+under a consent architecture that is a genuine competitive asset, sold to
+agencies as software while the productivity multiple is proven on the founder's
+own P&L.
+
+Five lines, ranked by whether an AI call pays for itself:
+
+| Motion | Verdict |
+|---|---|
+| Own-book cross-sell & renewal retention | **Build first.** Profitable day one, zero lead cost |
+| Speed-to-lead on owned forms | **Build.** Latency — 11 seconds, 2am, Sunday — is the real advantage |
+| Medicare | Strong LTV (~$1,600). Only with licensing, appointments, and counsel |
+| Final expense | Good ratio. High reputational exposure with a senior audience |
+| Commercial | Appointment-setting only. Humans close |
+| Cold purchased leads | **Don't** |
+
+---
+
+## Connectors
+
+22 mapped. **6 CORE, 7 SUPPORTING, 5 MARGINAL, 2 CUT.**
+
+Build the six core ones. Add supporting when a design partner asks by name. Leave
+marginal behind a flag. Never build Indeed or Otto Travel.
+
+The argument against wiring all 22: each is a token to rotate, a schema that
+changes, a vendor outage that becomes yours, and a row in the data-processing
+inventory a carrier will inspect before appointing you. Nine touch PII, four
+could touch PHI. Twenty-two live integrations and one engineer is not ambition.
+
+Full reasoning in [`02-CONNECTOR-MAP.md`](02-CONNECTOR-MAP.md).
+
+---
+
+## Timeframe
+
+| Phase | Window | Exit gate |
+|---|---|---|
+| **0 — Foundation** | Weeks 1–2 | Counsel, DNC SAN, E&O with TCPA coverage, licenses, voice release, gate green in CI. **Nothing dials.** |
+| **1 — Speed-to-lead** | Weeks 3–6 | 100 calls, one line, your own book, zero incidents, >30% contact |
+| **2 — Own-book cross-sell** | Weeks 7–12 | "Danny bound N policies last month at $X each" from your own P&L |
+| **3 — Design partners** | Months 4–6 | 10 agencies, 3 renew unprompted |
+| **4 — AMS integrations** | Months 7–9 | 2 AMS connectors shipped, 20–30 agencies |
+| **5 — Choose the shape** | Months 10–12 | SaaS, enterprise, or agency rollup |
+
+Twelve-month target: **zero compliance incidents**, 20–30 agencies, $200k–400k
+ARR, cost per bound policy under $150, 13-month persistency above 85%.
+
+**May slip:** dashboard, extra lines, extra connectors, design polish.
+**May not slip:** the gate, the consent ledger, the audit trail, retention jobs,
+the kill switch.
+
+---
+
+## The VC verdict, compressed
+
+The default version of this idea — an AI cold-calling purchased insurance leads
+in a cloned voice — is illegal without written consent, unprofitable with it,
+undifferentiated against a dozen funded competitors (Vapi, Retell, Bland,
+Synthflow, Air.ai), sold to the hardest SMB segment in America, in a category
+public markets just repriced by 90%.
+
+The version worth building is narrower and much better, and there are three
+shapes it can take:
+
+- **A — Vertical SaaS to agencies.** Right starting shape, ~$10M ARR ceiling.
+- **B — Sell to carriers and MGAs.** Venture-scale ACV, 12–18 month cycles, needs a logo first.
+- **C — AI-native agency rollup.** Don't sell the software — buy books at 6–10× EBITDA and run them at the productivity multiple. Highest ceiling, hardest execution, and the most interesting version if the founder is already a licensed producer.
+
+**Recommendation: A as the wedge, C as the stated destination.** Prove it on your
+own book first — that costs nothing and is the only evidence anyone believes.
+
+Full teardown, including the six questions you will be asked and what a bad
+answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
+
+---
+
+## Status, honestly
+
+**Built and verified:**
+- Compliance gate — consent, DNC ×4, calling hours with state overrides and DST,
+  licensing, Medicare PTC, attempt caps, kill switch. 40 self-tests, all passing.
+- Disclosure composition — AI identity, recording, CMS TPMO. Spoken by the
+  runtime before the model is invoked, so it cannot be jailbroken.
+- In-call DNC and human-request detection.
+- Voice governance — release validation on every synthesis, revocation cascade.
+- Fish TTS client with sentence pipelining, number normalization, failover budget.
+- Conversation state machine with interrupts, guardrails, and disposition mapping.
+- Full Postgres schema with append-only consent, immutable audit, and RLS.
+- Connector registry, all 22 with verdicts.
+- Both tonality prompts, adapted for insurance.
+
+**Not built:** carrier quote APIs, the Twilio media-stream process, the dashboard,
+AMS integrations, multi-tenancy beyond the schema.
+
+**Not dialed:** nothing in this repo has called a live number, and nothing should
+until Phase 0's checklist is complete.
+
+---
+
+## One thing needed from you
+
+Your phone number was mentioned but not provided. It goes in `TWILIO_CALLER_ID`
+in `.env.local` — and before it dials anything it needs STIR/SHAKEN attestation
+and registration with the Free Caller Registry, or carrier analytics will
+spam-flag it within weeks and take your contact rate to near zero.
+
+That failure mode is slow, quiet, and gets blamed on the product. Worth doing
+first.

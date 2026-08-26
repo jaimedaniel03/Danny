@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  compliance:
+    name: Compliance self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # This job is the merge gate. It asserts that the system cannot place a
+      # call it is not legally permitted to place. A failure here is a
+      # production incident, not a broken test — do not skip it, do not mark it
+      # continue-on-error, and do not add a retry.
+      - name: Compliance self-test
+        run: npm run compliance:selftest
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  guard:
+    name: Guard against gate bypasses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A cheap, blunt check for the specific change that would end the company:
+      # someone adding an escape hatch to the compliance gate. Grep is crude and
+      # crude is fine here — it fails loudly and a human reads the diff.
+      - name: Reject override flags in the compliance layer
+        run: |
+          if grep -rniE '(force|bypass|skip|override|ignore)[_a-z]*(gate|compliance|consent|dnc)' src/compliance/ src/telephony/ 2>/dev/null; then
+            echo "::error::A bypass-shaped identifier appeared in the compliance layer."
+            echo "The gate has no override flag. If this is a false positive, rename the symbol."
+            exit 1
+          fi
+          echo "No bypass-shaped identifiers found."
+
+      - name: Reject committed call media
+        run: |
+          if git ls-files | grep -iE '\.(wav|mp3|flac|m4a)$'; then
+            echo "::error::Call media must never be committed. It contains PII and possibly PHI."
+            exit 1
+          fi
+          echo "No call media in the index."

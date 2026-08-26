@@ -1,0 +1,28 @@
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+.env
+.env.local
+.env.*.local
+
+# Never commit call media or transcripts — they contain PII and PHI
+recordings/
+transcripts/
+*.wav
+*.mp3
+*.flac
+
+# Voice clone reference audio and signed releases
+voice-refs/
+releases/
+
+.DS_Store
+*.log
+.vercel
+.supabase
+
+# TS incremental build info
+*.tsbuildinfo
