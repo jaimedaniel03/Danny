@@ -2,7 +2,7 @@
   "name": "danny",
   "version": "0.1.0",
   "private": true,
-  "description": "An AI producer for insurance agencies — compliant voice outreach for Home, Auto, Business, Health, and Life.",
+  "description": "An AI producer for insurance agencies \u2014 compliant voice outreach for Home, Auto, Business, Health, and Life.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -19,7 +19,8 @@
     "db:migrate": "supabase db push",
     "db:types": "supabase gen types typescript --linked > src/types/database.ts",
     "voice:enroll": "tsx scripts/enroll-voice.ts",
-    "call:dry": "tsx scripts/dry-call.ts"
+    "call:dry": "tsx scripts/dry-call.ts",
+    "leads:triage": "tsx scripts/triage-leads.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

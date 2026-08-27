@@ -26,3 +26,8 @@ releases/
 
 # TS incremental build info
 *.tsbuildinfo
+
+# Lead data is PII and never committed; the template is the one exception
+leads/*
+!leads/TEMPLATE.csv
+out/

@@ -1,0 +1,6 @@
+first_name,last_name,phone,email,city,state,zip,consent_basis,consent_proof_url,consent_date,source,line
+Dana,Ruiz,(415) 555-0123,dana@example.com,San Francisco,CA,94110,written,https://example.com/consent/abc123,2026-08-01,quote_form,auto
+Marcus,Webb,415-555-0177,marcus@example.com,Oakland,CA,94601,web,,2026-07-15,quote_form,auto
+Priya,Shah,4155550142,,Fresno,,93701,purchased,,,lead_vendor,home
+Tom,Ellis,+14155550199,tom@example.com,Austin,TX,78701,inbound,,2026-08-20,called_us,auto
+Rosa,Marin,(415) 555-01,rosa@example.com,San Jose,CA,95112,written,,2026-06-01,quote_form,auto
