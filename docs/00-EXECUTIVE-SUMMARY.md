@@ -139,26 +139,42 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 
 ## Status, honestly
 
-**Built and verified:**
-- Compliance gate — consent, DNC ×4, calling hours with state overrides and DST,
-  licensing, Medicare PTC, attempt caps, kill switch. 40 self-tests, all passing.
-- Disclosure composition — AI identity, recording, CMS TPMO. Spoken by the
-  runtime before the model is invoked, so it cannot be jailbroken.
+**Built and verified** — 99 tests passing, typecheck clean:
+
+*Compliance*
+- Gate: consent basis, DNC ×4, calling hours with state overrides and DST,
+  licensing by state and class, Medicare permission-to-contact, attempt caps,
+  kill switch. Failures carry `humanMayDial` so leads route to a human queue.
+- Disclosure composition spoken by the runtime before the model is invoked.
 - In-call DNC and human-request detection.
-- Voice governance — release validation on every synthesis, revocation cascade.
-- Fish TTS client with sentence pipelining, number normalization, failover budget.
-- Conversation state machine with interrupts, guardrails, and disposition mapping.
-- Full Postgres schema with append-only consent, immutable audit, and RLS.
-- Connector registry, all 22 with verdicts.
-- Both tonality prompts, adapted for insurance.
 
-**Not built:** carrier quote APIs, the Twilio media-stream process, the dashboard,
-AMS integrations, multi-tenancy beyond the schema.
+*Lead intake*
+- Triage CLI: raw CSV → four queues, every lead run through the real gate.
+  US phone normalization, ZIP→state inference, split-timezone flagging.
+- Consent-link generator: signed, expiring links for the human queue.
 
-**Not dialed:** nothing in this repo has called a live number, and nothing should
-until Phase 0's checklist is complete.
+*Consent capture*
+- HMAC-signed tokens with the phone number **inside the signed payload**, so
+  the form cannot change what is being consented to.
+- Versioned disclosure language that refuses to render unreviewed text in
+  production.
+- Capture page + API writing an append-only ledger row with resolved verbatim
+  text, IP, user-agent, and E-SIGN signature.
 
----
+*Voice loop*
+- Twilio layer where `placeCall` accepts only a `DialAuthorization` — dialing
+  without the gate is a compile error, not a review comment.
+- Media-stream server: μ-law codec, 20ms framing, barge-in with mark-based
+  tracking of what the prospect *actually heard*.
+- Brain: streaming turns with per-sentence guardrail checks before synthesis,
+  prompt caching on the stable system block, `effort: low` for turn latency.
+- Deepgram STT with state-dependent endpointing.
+
+**Not built:** carrier quote APIs, producer dashboard, AMS integrations,
+multi-tenant admin beyond the schema.
+
+**Not dialed:** nothing in this repo has called a live number, and nothing
+should until Phase 0's checklist is complete.
 
 ## One thing needed from you
 

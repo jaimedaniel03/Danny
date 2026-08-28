@@ -20,10 +20,12 @@
     "db:types": "supabase gen types typescript --linked > src/types/database.ts",
     "voice:enroll": "tsx scripts/enroll-voice.ts",
     "call:dry": "tsx scripts/dry-call.ts",
-    "leads:triage": "tsx scripts/triage-leads.ts"
+    "leads:triage": "tsx scripts/triage-leads.ts",
+    "leads:links": "tsx scripts/consent-links.ts",
+    "media": "tsx scripts/media-server.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
+    "@anthropic-ai/sdk": "^0.122.0",
     "@deepgram/sdk": "^4.11.2",
     "@supabase/supabase-js": "^2.58.0",
     "next": "^15.5.4",
