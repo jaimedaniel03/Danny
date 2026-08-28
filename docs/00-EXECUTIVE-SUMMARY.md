@@ -161,6 +161,18 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 - Capture page + API writing an append-only ledger row with resolved verbatim
   text, IP, user-agent, and E-SIGN signature.
 
+*Channels — text, email, call*
+- Channel gate: three statutes, three consent bars, enforced separately. Email
+  and manual calls need no consent; promotional SMS needs the same written
+  consent as an AI call.
+- `evaluateReachability()` reports which doors are open per contact and names
+  the cheapest path to consent — usually email.
+- SMS: STOP/HELP/START, runtime-appended opt-out footer, GSM-7 segment
+  analysis, 10DLC registration enforced.
+- Email: CAN-SPAM validation, signed unsubscribe tokens, RFC 8058 one-click.
+- Outreach ladders that lead with email when consent is absent and with the AI
+  call once it exists.
+
 *Voice loop*
 - Twilio layer where `placeCall` accepts only a `DialAuthorization` — dialing
   without the gate is a compile error, not a review comment.
