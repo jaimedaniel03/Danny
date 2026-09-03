@@ -22,7 +22,8 @@
     "call:dry": "tsx scripts/dry-call.ts",
     "leads:triage": "tsx scripts/triage-leads.ts",
     "leads:links": "tsx scripts/consent-links.ts",
-    "media": "tsx scripts/media-server.ts"
+    "media": "tsx scripts/media-server.ts",
+    "setup": "tsx scripts/setup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

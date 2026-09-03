@@ -31,3 +31,6 @@ releases/
 leads/*
 !leads/TEMPLATE.csv
 out/
+
+# Real agency profile carries license numbers and NPNs
+agency.config.json

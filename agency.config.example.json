@@ -1,0 +1,38 @@
+{
+  "legalName": "Ruiz Family Insurance LLC",
+  "displayName": "Ruiz Insurance",
+  "npn": "19283746",
+  "postalAddress": "440 Grand Ave Suite 200, Oakland, CA 94610",
+  "agentDisplayName": "Danny",
+  "producers": [
+    {
+      "legalName": "Daniel Ruiz",
+      "displayName": "Danny",
+      "npn": "19283746",
+      "email": "danny@ruizinsurance.com",
+      "transferPhoneE164": "+15105550111",
+      "isVoiceSubject": true
+    }
+  ],
+  "licenses": [
+    {
+      "stateCode": "CA",
+      "classes": ["p_and_c"],
+      "licenseNumber": "0M12345",
+      "expiresAt": "2027-06-30"
+    }
+  ],
+  "lines": ["auto", "home"],
+  "appointedCarriers": ["Safeco", "Travelers"],
+  "phone": {
+    "callerIdE164": "+15105550100",
+    "messagingServiceSid": null
+  },
+  "email": {
+    "fromName": "Ruiz Insurance",
+    "fromAddress": "hello@ruizinsurance.com",
+    "replyTo": "hello@ruizinsurance.com"
+  },
+  "medicarePlanCount": null,
+  "disclosureVersion": "draft-v1"
+}
