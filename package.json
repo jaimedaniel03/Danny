@@ -23,7 +23,8 @@
     "leads:triage": "tsx scripts/triage-leads.ts",
     "leads:links": "tsx scripts/consent-links.ts",
     "media": "tsx scripts/media-server.ts",
-    "setup": "tsx scripts/setup.ts"
+    "setup": "tsx scripts/setup.ts",
+    "book:analyze": "tsx scripts/analyze-book.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

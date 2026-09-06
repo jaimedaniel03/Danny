@@ -1,0 +1,7 @@
+household_id,first_name,last_name,phone,email,state,zip,dob,line,carrier,policy_number,status,annual_premium,annual_commission,effective_date,renewal_date,written_date,owns_home,has_mortgage,dependents,business_owner,last_contact
+H001,Dana,Ruiz,(415) 555-0123,dana@example.com,CA,94110,1985-04-02,auto,Safeco,AUT-88213,active,2140,235,2025-09-20,2026-09-20,2019-09-20,y,y,2,,2025-09-18
+H002,Marcus,Webb,415-555-0177,marcus@example.com,CA,94601,1962-01-15,auto,Travelers,AUT-41902,active,1880,207,2026-03-15,2027-03-15,2022-03-15,y,n,0,,2026-03-10
+H003,Priya,Shah,4155550142,priya@example.com,CA,93701,1978-11-30,auto,Safeco,AUT-55120,active,2400,264,2026-05-01,2027-05-01,2020-05-01,y,y,3,y,2026-04-28
+H003,Priya,Shah,4155550142,priya@example.com,CA,93701,1978-11-30,home,Safeco,HO-55121,active,1950,234,2026-05-01,2027-05-01,2020-05-01,y,y,3,y,2026-04-28
+H004,Tom,Ellis,+14155550199,tom@example.com,CA,95112,1991-07-14,home,Chubb,HO-77410,active,2200,264,2026-10-05,2026-10-05,2023-10-05,y,y,1,,2025-10-01
+H005,Rosa,Marin,415-555-0188,rosa@example.com,CA,94609,1959-02-20,auto,Progressive,AUT-31007,lapsed,1600,176,2024-08-01,2025-08-01,2018-08-01,n,n,0,,2025-07-15
