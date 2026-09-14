@@ -14,6 +14,7 @@ import { evaluateGate, routeFailures, type GateInput, type LicenseGrant } from '
 import { permissiveTestProvider } from './dnc';
 import { detectDncRequest, detectHumanRequest } from './disclosure';
 import { checkCallingHours, effectiveWindow } from './calling-hours';
+import { NEVER_AI_DIALABLE_SOURCES } from '@/connectors/registry';
 import type { ConsentRecord, Contact, GateFailureCode } from '@/types';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ const CONTACT: Contact = {
   dateOfBirth: new Date('1985-04-02'),
   isExistingPolicyholder: true,
   internalDncAt: null,
+  leadSource: null,
 };
 
 const WRITTEN_CONSENT: ConsentRecord = {
@@ -406,5 +408,50 @@ describe('in-call detectors', () => {
     'are you a real person',
   ])('detects a human request in %j', (utterance) => {
     expect(detectHumanRequest(utterance)).toBe(true);
+  });
+});
+
+// ── Provenance ───────────────────────────────────────────────────────────────
+
+describe('gate: a contact from a prospecting database is never AI-dialable', () => {
+  it.each([...NEVER_AI_DIALABLE_SOURCES])('refuses a contact sourced from %s', async (source) => {
+    const bought: Contact = { ...CONTACT, leadSource: source };
+
+    // Note the consent record is the *strongest* one in the file. That is the
+    // point: buying a record does not produce written consent from the person
+    // in it, so a consent row attached by an enrichment step is a data-quality
+    // problem, not evidence.
+    expect(await codes(baseInput({ contact: bought }))).toContain(
+      'LEAD_SOURCE_NEVER_AI_DIALABLE',
+    );
+  });
+
+  it('routes the contact to a human rather than discarding a real prospect', async () => {
+    const bought: Contact = { ...CONTACT, leadSource: 'Apollo.io' };
+    const result = await evaluateGate(baseInput({ contact: bought }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    // A licensed human calling a purchased B2B lead after a DNC scrub is
+    // ordinary outbound sales. It is the artificial voice that 227(b) bars.
+    const routed = routeFailures(result.failures);
+    expect(routed.dead).toHaveLength(0);
+    expect(routed.humanQueue.length).toBeGreaterThan(0);
+  });
+
+  it('allows a contact from a source that is not on the list', async () => {
+    for (const source of ['quote_form', 'inbound_call', 'referral', 'HubSpot']) {
+      const contact: Contact = { ...CONTACT, leadSource: source };
+      expect(await codes(baseInput({ contact })), source).not.toContain(
+        'LEAD_SOURCE_NEVER_AI_DIALABLE',
+      );
+    }
+  });
+
+  it('does not disqualify a contact whose provenance is simply unrecorded', async () => {
+    // Plenty of legitimate book records predate the field. Treating null as
+    // disqualifying would block an agency's entire existing book on import.
+    expect(await codes(baseInput())).not.toContain('LEAD_SOURCE_NEVER_AI_DIALABLE');
   });
 });

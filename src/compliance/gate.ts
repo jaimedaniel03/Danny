@@ -34,6 +34,7 @@ import type {
   LineOfBusiness,
 } from '@/types';
 import { AI_DIALABLE_BASES, LINE_LICENSE, MEDICARE_LINES } from '@/types';
+import { NEVER_AI_DIALABLE_SOURCES } from '@/connectors/registry';
 import { checkCallingHours } from './calling-hours';
 import { buildOpeningDisclosure, type DisclosureContext } from './disclosure';
 import { scrub, type DncProvider, type EbrEvidence, type ScrubVerdict } from './dnc';
@@ -316,6 +317,26 @@ export async function evaluateGate(input: GateInput): Promise<GateResult> {
         },
       ],
     };
+  }
+
+  // ── Provenance ─────────────────────────────────────────────────────────────
+  // Checked before consent, and independently of it. Buying a record from a
+  // B2B prospecting database does not produce prior express written consent
+  // from the person in it, so a consent record attached to such a contact by an
+  // enrichment step is evidence of a data-quality problem, not of consent.
+  //
+  // A licensed human may still dial these after a DNC scrub — that is ordinary
+  // outbound sales. It is the artificial voice that §227(b) bars.
+  if (contact.leadSource && NEVER_AI_DIALABLE_SOURCES.has(contact.leadSource)) {
+    failures.push({
+      code: 'LEAD_SOURCE_NEVER_AI_DIALABLE',
+      detail:
+        `Contact was sourced from "${contact.leadSource}", a prospecting database. ` +
+        `Nothing about acquiring a record from one produces prior express written ` +
+        `consent, so no AI call is lawful regardless of what consent records exist ` +
+        `on this contact. A licensed human producer may dial after a DNC scrub.`,
+      humanMayDial: true,
+    });
   }
 
   // ── Consent ────────────────────────────────────────────────────────────────

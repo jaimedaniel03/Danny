@@ -72,6 +72,7 @@ const CONTACT: Contact = {
   dateOfBirth: null,
   isExistingPolicyholder: true,
   internalDncAt: null,
+  leadSource: null,
 };
 
 const WRITTEN: ConsentRecord = {

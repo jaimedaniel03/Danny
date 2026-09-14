@@ -94,7 +94,6 @@ function fakeAnthropic(line = AGENT_LINE): unknown {
     messages: {
       stream: () => ({
         abort: () => undefined,
-        // eslint-disable-next-line @typescript-eslint/require-await -- async generator
         async *[Symbol.asyncIterator]() {
           yield { type: 'content_block_delta', delta: { type: 'text_delta', text: line } };
         },
@@ -137,7 +136,6 @@ function harness(over: Partial<CallSessionDeps> = {}): Harness {
       close: () => undefined,
     }),
     synthesis: {
-      // eslint-disable-next-line @typescript-eslint/require-await -- async generator
       synthesize: async function* (text: string) {
         synthesized.push(text);
         // One frame of silence is enough; the audio path is tested elsewhere.

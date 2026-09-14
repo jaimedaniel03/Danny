@@ -37,6 +37,7 @@ const CONTACT: Contact = {
   dateOfBirth: null,
   isExistingPolicyholder: false,
   internalDncAt: null,
+  leadSource: null,
 };
 
 const LICENSES: LicenseGrant[] = [

@@ -168,7 +168,15 @@ appointment-setting only.
 
 Note the consent problem: Apollo, Sprouts, and Vibe supply *business* contacts
 with **no consent whatsoever**. Those numbers are human-dialable after DNC
-scrubbing and never AI-dialable. See `NEVER_AI_DIALABLE_SOURCES` in the registry.
+scrubbing and never AI-dialable.
+
+This is enforced, not merely stated. `Contact.leadSource` is checked against
+`NEVER_AI_DIALABLE_SOURCES` in the gate, before consent is even considered, and
+the refusal carries `humanMayDial: true` so the lead routes to the human queue
+rather than being discarded. A consent record attached to such a contact by an
+enrichment step does not override it — buying a record cannot produce written
+consent from the person in it, so a consent row on one is a data-quality problem
+rather than evidence.
 
 ### 6. Cold auto and home from purchased leads — **do not build for this**
 

@@ -283,6 +283,10 @@ for (let r = 1; r < rows.length; r++) {
     dateOfBirth: null,
     isExistingPolicyholder: effectiveBasis === 'established_business_relationship',
     internalDncAt: null,
+    // The source column was already parsed and then thrown away. The gate
+    // refuses an AI call on a prospecting-database source, so carrying it is
+    // the difference between that control existing and merely being declared.
+    leadSource: cell(row, idx.source) || null,
   };
 
   const consentDateRaw = cell(row, idx.consentDate);

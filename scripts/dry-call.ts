@@ -87,6 +87,7 @@ ${dim('Nothing reaches the PSTN. Nothing is charged.')}
     dateOfBirth: null,
     isExistingPolicyholder: false,
     internalDncAt: null,
+    leadSource: 'quote_form',
   };
 
   const consents: ConsentRecord[] =

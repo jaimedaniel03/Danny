@@ -124,6 +124,20 @@ export interface Contact {
   readonly dateOfBirth: Date | null;
   readonly isExistingPolicyholder: boolean;
   readonly internalDncAt: Date | null;
+  /**
+   * Where this contact came from — a connector name, a form, an inbound call.
+   *
+   * Load-bearing, not metadata: contacts sourced from a B2B prospecting
+   * database can never be AI-dialed, because nothing about buying a record
+   * produces prior express written consent from the person in it. The gate
+   * checks this against `NEVER_AI_DIALABLE_SOURCES` and refuses regardless of
+   * what consent records an enrichment step may have attached.
+   *
+   * `null` means unknown provenance, which is not treated as disqualifying on
+   * its own — plenty of legitimate records predate the field — but it is worth
+   * being able to see.
+   */
+  readonly leadSource: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -149,6 +163,7 @@ export type GateFailureCode =
   | 'ATTEMPT_CAP_EXCEEDED'
   | 'REASSIGNED_NUMBER'
   | 'INVALID_PHONE'
+  | 'LEAD_SOURCE_NEVER_AI_DIALABLE'
   | 'KILL_SWITCH_ENGAGED';
 
 export interface GateFailure {
