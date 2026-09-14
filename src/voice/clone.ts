@@ -78,6 +78,22 @@ export function assertReleaseValid(input: {
 }): void {
   const { release, model, use, line, at } = input;
 
+  // The release has to be *this model's* release.
+  //
+  // Without this check every other line below is checking the wrong document:
+  // a live, permissive release for one voice would authorize synthesis of a
+  // different person's cloned voice, and the caller passes the two
+  // independently, so nothing else catches the mismatch. It is the one failure
+  // here that produces a recording of someone who never agreed to be cloned.
+  if (model.releaseId !== release.id) {
+    throw new VoiceReleaseError(
+      `Voice model ${model.id} is governed by release ${model.releaseId}, but ` +
+        `release ${release.id} was presented. Synthesis is prohibited — a release ` +
+        `authorizes one voice, not any voice.`,
+      release.id,
+    );
+  }
+
   if (model.disabledAt !== null) {
     throw new VoiceReleaseError(`Voice model ${model.id} is disabled.`, release.id);
   }

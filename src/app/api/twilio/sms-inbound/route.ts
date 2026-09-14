@@ -13,40 +13,23 @@
  * worse than a missing confirmation.
  */
 
-import { NextResponse, type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { classifyInboundSms, buildSmsReplyTwiml, buildEmptySmsTwiml } from '@/channels/sms';
-import { loadTwilioConfig, validateWebhook } from '@/telephony/twilio';
 import { SUPPRESSION_SCOPE } from '@/channels/types';
+import { verifyTwilioRequest, twimlResponse } from '../_verify';
 
 export const runtime = 'nodejs';
 
-function twiml(body: string): NextResponse {
-  return new NextResponse(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/xml' },
-  });
-}
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const config = loadTwilioConfig();
+  // Uses the shared verifier rather than its own copy of the same three steps.
+  // It had one, which is exactly the drift `_verify.ts` exists to prevent: the
+  // inline version also called `loadTwilioConfig()` unguarded, so a
+  // misconfiguration surfaced as an unhandled 500 with a stack trace instead of
+  // the handled one every other route returns.
+  const verified = await verifyTwilioRequest(request);
+  if (!verified.ok) return verified.response;
 
-  const form = await request.formData();
-  const params: Record<string, string> = {};
-  for (const [key, value] of form.entries()) {
-    if (typeof value === 'string') params[key] = value;
-  }
-
-  const check = validateWebhook({
-    signature: request.headers.get('x-twilio-signature'),
-    url: request.url,
-    params,
-    config,
-  });
-  if (!check.valid) {
-    console.warn('[sms-inbound] rejected webhook:', check.reason);
-    return new NextResponse('unauthorized', { status: 403 });
-  }
-
+  const { params } = verified.webhook;
   const from = params['From'] ?? '';
   const body = params['Body'] ?? '';
   const { loadProfileSafe } = await import('@/config/agency');
@@ -80,13 +63,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           from,
           err,
         });
-        return twiml(buildEmptySmsTwiml());
+        return twimlResponse(buildEmptySmsTwiml());
       }
-      return twiml(buildSmsReplyTwiml(action.reply));
+      return twimlResponse(buildSmsReplyTwiml(action.reply));
     }
 
     case 'help':
-      return twiml(buildSmsReplyTwiml(action.reply));
+      return twimlResponse(buildSmsReplyTwiml(action.reply));
 
     case 'start': {
       try {
@@ -95,7 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       } catch (err) {
         console.error('[sms-inbound] unsuppress failed', err);
       }
-      return twiml(buildSmsReplyTwiml(action.reply));
+      return twimlResponse(buildSmsReplyTwiml(action.reply));
     }
 
     case 'conversation': {
@@ -115,7 +98,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       // No auto-reply: an unsolicited automated response to a human reply is
       // both worse UX and a fresh message under the TCPA.
-      return twiml(buildEmptySmsTwiml());
+      return twimlResponse(buildEmptySmsTwiml());
     }
   }
 }
