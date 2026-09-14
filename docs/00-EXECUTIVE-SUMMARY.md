@@ -139,7 +139,7 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 
 ## Status, honestly
 
-**Built and verified** — 432 tests passing, typecheck and lint clean
+**Built and verified** — 450 tests passing, typecheck and lint clean
 (`npm run verify`):
 
 *Compliance*

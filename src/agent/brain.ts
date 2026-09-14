@@ -173,7 +173,6 @@ export async function* streamTurn(
 
   let buffered = '';
   let emitted = 0;
-  let emittedChars = 0;
 
   for await (const event of stream) {
     if (event.type !== 'content_block_delta') continue;
@@ -198,19 +197,31 @@ export async function* streamTurn(
       }
 
       emitted++;
-      emittedChars += text.length;
       yield { text, index: i };
     }
   }
 
-  // Whatever is left after the stream closes is the final sentence.
-  const tail = buffered.slice(emittedChars).trim();
-  if (tail) {
-    const violations = checkGuardrails(tail);
+  // Whatever the chunker still has after the stream closes.
+  //
+  // Re-split rather than slicing the raw buffer by how many characters were
+  // emitted. The chunker joins tokens with a single space and trims, so its
+  // output is shorter than the source whenever the model writes a newline or a
+  // double space between sentences — which models routinely do. A
+  // character-count slice then lands mid-word and the final utterance comes out
+  // as the tail of the previous sentence glued to the last one: "e. A third one
+  // here." Spoken aloud, on a live call, once per turn that ended that way.
+  const chunks = splitIntoSpeakableChunks(buffered);
+  for (let i = emitted; i < chunks.length; i++) {
+    const text = chunks[i];
+    if (text === undefined) continue;
+
+    const violations = checkGuardrails(text);
     if (violations.length > 0) {
       throw new GuardrailViolationError(violations, buffered);
     }
-    yield { text: tail, index: emitted };
+
+    emitted++;
+    yield { text, index: i };
   }
 }
 
