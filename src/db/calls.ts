@@ -192,24 +192,9 @@ export async function recordCallRecording(input: {
     .eq('call_id', row.id);
 }
 
-/** Written by the media server when a call ends with a real disposition. */
-export async function recordCallOutcome(input: {
-  readonly providerSid: string;
-  readonly disposition: CallDisposition;
-  readonly finalState: string;
-  readonly durationSeconds: number;
-  readonly aiDisclosedAt: Date | null;
-}): Promise<void> {
-  const { error } = await serviceClient()
-    .from('calls')
-    .update({
-      disposition: input.disposition,
-      final_state: input.finalState,
-      duration_seconds: input.durationSeconds,
-      ended_at: new Date().toISOString(),
-      ai_disclosed_at: input.aiDisclosedAt?.toISOString() ?? null,
-    })
-    .eq('provider_sid', input.providerSid);
-
-  if (error) throw new Error(`Call outcome write failed: ${error.message}`);
-}
+// `recordCallOutcome`, which keyed the same update on `provider_sid`, lived
+// here and was never called. Removed rather than kept: `provider_sid` is
+// back-filled by a status webhook that can arrive after the media stream has
+// already ended, so that version could match nothing and report success. Two
+// functions doing the same write, one of them subtly broken, is an invitation
+// to reach for the wrong one. Use `recordCallOutcomeById`.
