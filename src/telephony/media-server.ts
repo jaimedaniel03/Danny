@@ -447,6 +447,15 @@ export class CallSession {
         });
         await this.deps.onTransferRequested();
         break;
+      case 'RECORDING_DECLINED':
+        // Not an apology for having recorded — the announcement came first and
+        // they are answering it. Just stop, and leave the door open.
+        await this.speak(
+          "That's completely fine — I'll end the call here. If you'd like to talk " +
+            'without a recording, call our office any time and a licensed agent will help.',
+          { interruptible: false },
+        );
+        break;
       case 'WRONG_PARTY':
         await this.speak("Sorry about that — I'll update our records. Have a good one.", {
           interruptible: false,

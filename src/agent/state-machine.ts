@@ -14,7 +14,11 @@
  * all, and they cannot be overridden by anything the model or the prospect says.
  */
 
-import { detectDncRequest, detectHumanRequest } from '@/compliance/disclosure';
+import {
+  detectDncRequest,
+  detectHumanRequest,
+  detectRecordingRefusal,
+} from '@/compliance/disclosure';
 import type { CallDisposition, LineOfBusiness } from '@/types';
 
 export type ConversationState =
@@ -52,6 +56,7 @@ export const TERMINAL_STATES: ReadonlySet<ConversationState> = new Set([
 export type Interrupt =
   | { readonly kind: 'DNC_REQUESTED'; readonly utterance: string }
   | { readonly kind: 'HUMAN_REQUESTED'; readonly utterance: string }
+  | { readonly kind: 'RECORDING_DECLINED'; readonly utterance: string }
   | { readonly kind: 'WRONG_PARTY'; readonly utterance: string }
   | { readonly kind: 'MAX_DURATION'; readonly seconds: number }
   | { readonly kind: 'SILENCE_TIMEOUT'; readonly seconds: number };
@@ -89,6 +94,12 @@ export function detectInterrupt(input: {
   if (detectHumanRequest(utterance)) {
     return { kind: 'HUMAN_REQUESTED', utterance };
   }
+  // There is no way to honour this except to stop: Twilio records the leg, and
+  // the transcript is what the agent reasons over, so "keep talking without
+  // recording" is not a state this system has.
+  if (detectRecordingRefusal(utterance)) {
+    return { kind: 'RECORDING_DECLINED', utterance };
+  }
 
   const normalized = utterance.toLowerCase().replace(/['‘’]/g, '').replace(/[^a-z\s]/g, ' ');
   if (WRONG_PARTY_PHRASES.some((p) => normalized.includes(p))) {
@@ -116,6 +127,7 @@ export function interruptTransition(interrupt: Interrupt): ConversationState {
       return 'HONORING_DNC';
     case 'HUMAN_REQUESTED':
       return 'TRANSFERRING';
+    case 'RECORDING_DECLINED':
     case 'WRONG_PARTY':
     case 'MAX_DURATION':
     case 'SILENCE_TIMEOUT':

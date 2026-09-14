@@ -139,15 +139,21 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 
 ## Status, honestly
 
-**Built and verified** — 364 tests passing, typecheck and lint clean
+**Built and verified** — 377 tests passing, typecheck and lint clean
 (`npm run verify`):
 
 *Compliance*
 - Gate: consent basis, DNC ×4, calling hours with state overrides and DST,
   licensing by state and class, Medicare permission-to-contact, attempt caps,
   kill switch. Failures carry `humanMayDial` so leads route to a human queue.
-- Disclosure composition spoken by the runtime before the model is invoked.
-- In-call DNC and human-request detection.
+- Disclosure composition spoken by the runtime before the model is invoked:
+  AI identity, recording, and — in all-party states — an explicit ask for
+  recording consent, which a clear "no" ends the call rather than overriding.
+- In-call detection of DNC requests, requests for a human, recording refusals,
+  and wrong-party answers, all evaluated on the raw transcript before the model
+  is invoked at all.
+- Lead provenance: contacts from prospecting databases can never be AI-dialed,
+  enforced in the gate ahead of consent and routed to the human queue.
 
 *Lead intake*
 - Triage CLI: raw CSV → four queues, every lead run through the real gate.

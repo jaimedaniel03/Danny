@@ -379,3 +379,46 @@ describe('discovery requirements', () => {
     }
   });
 });
+
+describe('declining to be recorded ends the call', () => {
+  it.each([
+    'please do not record this',
+    "don't record me",
+    'I do not consent to being recorded',
+    'stop recording',
+    'I am not comfortable being recorded',
+    'turn the recording off',
+  ])('detects %j', (text) => {
+    expect(detectInterrupt(utterance(text))?.kind).toBe('RECORDING_DECLINED');
+  });
+
+  it('closes out — there is no "continue unrecorded" state', () => {
+    // Twilio records the leg and the transcript is what the agent reasons over,
+    // so honouring the refusal means stopping, not switching modes.
+    const interrupt = detectInterrupt(utterance('please stop recording'));
+    expect(interrupt).not.toBeNull();
+    if (!interrupt) return;
+    expect(interruptTransition(interrupt)).toBe('CLOSING_OUT');
+  });
+
+  it('is narrow on purpose, unlike the other detectors', () => {
+    // A false positive here hangs up on someone who said yes. Everything short
+    // of an unambiguous refusal is the implied consent that continuing the
+    // conversation after an announcement has always been.
+    for (const text of [
+      'no problem',
+      'sure, that is fine',
+      'recording is fine with me',
+      'yeah go ahead',
+      'I record my calls too',
+      'okay',
+    ]) {
+      expect(detectInterrupt(utterance(text))?.kind, text).not.toBe('RECORDING_DECLINED');
+    }
+  });
+
+  it('yields to a do-not-call request in the same breath', () => {
+    const interrupt = detectInterrupt(utterance('do not record me and do not call me again'));
+    expect(interrupt?.kind).toBe('DNC_REQUESTED');
+  });
+});

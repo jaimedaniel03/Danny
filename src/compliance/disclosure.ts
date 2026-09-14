@@ -64,6 +64,18 @@ export function recordingDisclosure(): string {
 }
 
 /**
+ * The all-party ask, appended to the announcement in two-party states.
+ *
+ * Phrased as a real question with a real answer, not a rhetorical one. "This
+ * call may be recorded, okay?" invites nothing; "is that alright with you?"
+ * invites a no, which is the point — an acknowledgement nobody could decline is
+ * not an acknowledgement.
+ */
+export function recordingAcknowledgementRequest(): string {
+  return `Your state asks me to check — is that alright with you?`;
+}
+
+/**
  * CMS-prescribed Third Party Marketing Organization disclaimer. Must be read
  * within the first minute of a Medicare-related call, verbatim, at the same
  * cadence as the rest of the call — no speed-reading.
@@ -90,6 +102,19 @@ export function medicareTpmoDisclaimer(ctx: DisclosureContext): string {
  */
 export function buildOpeningDisclosure(ctx: DisclosureContext): string {
   const parts: string[] = [aiDisclosure(ctx), recordingDisclosure()];
+
+  // All-party states want consent, not just notice. California Penal Code §632
+  // is the strictest of them and makes recording a confidential communication
+  // without every party's consent a crime.
+  //
+  // Continuing the conversation after an announcement is the implied consent
+  // everyone relies on, and it is probably enough. Asking costs one sentence
+  // and converts "probably" into a recorded yes, which is the difference
+  // between a defence and an argument. So we ask — and `detectRecordingRefusal`
+  // gives a clear "no" somewhere to go.
+  if (requiresRecordingAcknowledgement(ctx.contactStateCode)) {
+    parts.push(recordingAcknowledgementRequest());
+  }
 
   if (MEDICARE_LINES.has(ctx.line)) {
     if (!ctx.agencyNpn) {
@@ -237,4 +262,44 @@ const NORMALIZED_HUMAN_PHRASES: readonly string[] =
 export function detectHumanRequest(utterance: string): boolean {
   const normalized = normalizeForMatch(utterance);
   return NORMALIZED_HUMAN_PHRASES.some((phrase) => normalized.includes(phrase));
+}
+
+/**
+ * Phrases declining to be recorded.
+ *
+ * Deliberately narrow, and the asymmetry with the other detectors is the design.
+ * The DNC and human-request lists err toward firing, because the cost of a false
+ * positive there is one call routed to a person. Here a false positive hangs up
+ * on a prospect who said "no problem" — so this fires only on an unambiguous
+ * refusal, and everything else is treated as the implied consent that
+ * continuing the conversation after an announcement has always been.
+ *
+ * There is no way to honour a refusal except to stop, because the recording is
+ * the call: Twilio records the leg, and the transcript is what the agent reasons
+ * over. So a clear no ends the call politely rather than continuing unrecorded.
+ */
+export const RECORDING_REFUSAL_PHRASES: readonly string[] = [
+  'do not record',
+  'dont record',
+  'stop recording',
+  'no recording',
+  'not be recorded',
+  'dont want to be recorded',
+  'do not want to be recorded',
+  'dont consent to record',
+  'do not consent to record',
+  'dont consent to being recorded',
+  'i do not consent',
+  'turn off the recording',
+  'turn the recording off',
+  'not okay with being recorded',
+  'not comfortable being recorded',
+];
+
+const NORMALIZED_RECORDING_REFUSALS: readonly string[] =
+  RECORDING_REFUSAL_PHRASES.map(normalizeForMatch);
+
+export function detectRecordingRefusal(utterance: string): boolean {
+  const normalized = normalizeForMatch(utterance);
+  return NORMALIZED_RECORDING_REFUSALS.some((phrase) => normalized.includes(phrase));
 }

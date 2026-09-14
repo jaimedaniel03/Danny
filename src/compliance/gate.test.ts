@@ -12,7 +12,11 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateGate, routeFailures, type GateInput, type LicenseGrant } from './gate';
 import { permissiveTestProvider } from './dnc';
-import { detectDncRequest, detectHumanRequest } from './disclosure';
+import {
+  detectDncRequest,
+  detectHumanRequest,
+  requiresRecordingAcknowledgement,
+} from './disclosure';
 import { checkCallingHours, effectiveWindow } from './calling-hours';
 import { NEVER_AI_DIALABLE_SOURCES } from '@/connectors/registry';
 import type { ConsentRecord, Contact, GateFailureCode } from '@/types';
@@ -453,5 +457,46 @@ describe('gate: a contact from a prospecting database is never AI-dialable', () 
     // Plenty of legitimate book records predate the field. Treating null as
     // disqualifying would block an agency's entire existing book on import.
     expect(await codes(baseInput())).not.toContain('LEAD_SOURCE_NEVER_AI_DIALABLE');
+  });
+});
+
+// ── Recording consent ────────────────────────────────────────────────────────
+
+describe('gate: the opening asks for recording consent where the law wants it', () => {
+  it('asks in an all-party state', async () => {
+    const result = await evaluateGate(baseInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // California Penal Code §632 makes recording a confidential communication
+    // without all-party consent a crime. Announcement plus continuing is the
+    // implied consent everyone relies on; asking turns it into a recorded yes.
+    expect(result.authorization.requiredDisclosure).toContain('is that alright with you');
+  });
+
+  it('announces without asking in a one-party state', async () => {
+    const texan: Contact = { ...CONTACT, stateCode: 'TX', timezone: 'America/Chicago' };
+    const licenses: LicenseGrant[] = [
+      { stateCode: 'TX', classes: ['p_and_c'], expiresAt: new Date('2027-12-31') },
+    ];
+    const result = await evaluateGate(baseInput({ contact: texan, licenses }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.authorization.requiredDisclosure).toContain('recorded for quality');
+    expect(result.authorization.requiredDisclosure).not.toContain('is that alright with you');
+  });
+
+  it('asks when the state is unknown, because unknown is not a licence to assume', async () => {
+    expect(requiresRecordingAcknowledgement(null)).toBe(true);
+  });
+
+  it('still leads with the AI identity — the ask does not displace it', async () => {
+    const result = await evaluateGate(baseInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const text = result.authorization.requiredDisclosure;
+    expect(text.indexOf("I'm not a human")).toBeLessThan(text.indexOf('is that alright'));
   });
 });
