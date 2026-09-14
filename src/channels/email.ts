@@ -32,6 +32,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { loadProfileSafe } from '@/config/agency';
 import type { ChannelAuthorization } from './types';
 
 export interface EmailConfig {
@@ -44,14 +45,35 @@ export interface EmailConfig {
   readonly dryRun: boolean;
 }
 
+/**
+ * Sender identity comes from the agency profile; credentials come from the
+ * environment.
+ *
+ * The split is not arbitrary. `postalAddress` is CAN-SPAM item 4 — a real
+ * physical address in every commercial message — and the profile is the one
+ * place that is validated to hold one. Reading it from a loose env var is how
+ * you end up sending a compliant-looking email with an empty footer, which is
+ * the violation the footer exists to prevent.
+ *
+ * Env vars still override, for the case where the same profile sends from two
+ * addresses. They just are not the source of truth any more.
+ */
 export function loadEmailConfig(): EmailConfig {
-  const postalAddress = process.env['AGENCY_POSTAL_ADDRESS'] ?? '';
+  // Safe load: a missing profile degrades to the env vars rather than throwing.
+  // `validateEmail` is what refuses to send with an empty postal address, and
+  // it should be the thing that reports that, in one place.
+  const profile = loadProfileSafe();
+
   return {
-    fromName: process.env['EMAIL_FROM_NAME'] ?? process.env['AGENCY_LEGAL_NAME'] ?? '',
-    fromAddress: process.env['EMAIL_FROM_ADDRESS'] ?? '',
+    fromName: process.env['EMAIL_FROM_NAME'] ?? profile?.email.fromName ?? profile?.legalName ?? '',
+    fromAddress: process.env['EMAIL_FROM_ADDRESS'] ?? profile?.email.fromAddress ?? '',
     replyToAddress:
-      process.env['EMAIL_REPLY_TO'] ?? process.env['EMAIL_FROM_ADDRESS'] ?? '',
-    postalAddress,
+      process.env['EMAIL_REPLY_TO'] ??
+      profile?.email.replyTo ??
+      process.env['EMAIL_FROM_ADDRESS'] ??
+      profile?.email.fromAddress ??
+      '',
+    postalAddress: process.env['AGENCY_POSTAL_ADDRESS'] ?? profile?.postalAddress ?? '',
     apiKey: process.env['RESEND_API_KEY'] ?? null,
     dryRun: process.env['DANNY_DRY_RUN'] !== 'false',
   };

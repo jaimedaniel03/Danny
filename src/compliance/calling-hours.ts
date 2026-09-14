@@ -11,7 +11,7 @@
  * table below is the operating set for the states we expect to license into. It
  * is deliberately conservative: where sources conflict we take the narrower
  * window. Treat it as an engineering default, not as legal advice — have counsel
- * confirm each state before you enable it in LICENSED_STATES.
+ * confirm each state before you add it to `licenses` in agency.config.json.
  */
 
 export interface CallingWindow {

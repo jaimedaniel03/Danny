@@ -16,6 +16,7 @@
 import { notFound } from 'next/navigation';
 import { verifyConsentToken, maskPhoneForDisplay } from '@/consent/tokens';
 import { renderDisclosure } from '@/consent/disclosure-text';
+import { loadProfileSafe } from '@/config/agency';
 import { ConsentForm } from './consent-form';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,11 @@ export default async function ConsentPage({ params }: PageProps) {
     );
   }
 
-  const agencyLegalName = process.env['AGENCY_LEGAL_NAME'] ?? 'Your Agency';
+  // Without a profile there is no seller to name, so there is nothing valid to
+  // render. Better a 404 than a form that captures consent for "Your Agency".
+  const profile = loadProfileSafe();
+  if (!profile) notFound();
+  const agencyLegalName = profile.legalName;
 
   let disclosure;
   try {

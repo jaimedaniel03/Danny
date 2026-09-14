@@ -27,6 +27,27 @@ const red = (s: string): string => `\x1b[31m${s}\x1b[0m`;
 const green = (s: string): string => `\x1b[32m${s}\x1b[0m`;
 const amber = (s: string): string => `\x1b[33m${s}\x1b[0m`;
 
+/**
+ * Refuse a non-interactive run, loudly.
+ *
+ * Without this, a piped or redirected stdin hits EOF on the first question,
+ * `rl.question` never settles, the event loop drains, and node exits 0 having
+ * written nothing — a silent success that leaves the agency unconfigured and
+ * every downstream command reading a profile that is not there. Anything that
+ * reports success while doing nothing is worse than a crash.
+ */
+if (!stdin.isTTY) {
+  console.error(
+    red('\nSetup needs an interactive terminal.\n') +
+      `\nRun ${dim('npm run setup')} directly rather than through a pipe, a CI job,\n` +
+      `or a redirect. To configure without prompts, copy\n` +
+      `${dim('agency.config.example.json')} to ${dim(PROFILE_PATH)} and edit it by hand —\n` +
+      `every command validates the profile on load, so a mistake surfaces there.\n`,
+  );
+  rl.close();
+  process.exit(1);
+}
+
 async function ask(question: string, fallback?: string): Promise<string> {
   const suffix = fallback ? dim(` [${fallback}]`) : '';
   const answer = (await rl.question(`${question}${suffix}\n> `)).trim();

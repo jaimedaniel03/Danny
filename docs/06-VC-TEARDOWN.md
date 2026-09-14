@@ -229,7 +229,8 @@ Order matters, and this order is deliberately unglamorous.
 Retain telecom counsel (a TCPA specialist, not your general business attorney) and
 have them write your consent disclosure language. Get the DNC SAN. Bind E&O and
 cyber with TCPA coverage confirmed in writing. Sign your own voice release. Confirm
-which states you are licensed in and put exactly those in `LICENSED_STATES`.
+which states and classes you are licensed in and put exactly those in
+`agency.config.json`.
 
 *Nothing dials until this is done. Not one test call to a real number.*
 

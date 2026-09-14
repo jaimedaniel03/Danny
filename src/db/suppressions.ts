@@ -130,7 +130,7 @@ export async function loadSuppressions(input: {
   if (error) throw new Error(`Suppression read failed: ${error.message}`);
 
   return (data ?? []).map((row) => {
-    const r = row as { channel: Channel; suppressed_at: string; reason: string; source: SuppressionSource };
+    const r = row;
     return {
       channel: r.channel,
       suppressedAt: new Date(r.suppressed_at),

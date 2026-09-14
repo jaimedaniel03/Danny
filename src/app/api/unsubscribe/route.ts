@@ -65,7 +65,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const agency = process.env['AGENCY_LEGAL_NAME'] ?? 'this agency';
+  // Display only — the suppression already happened above. A missing profile
+  // must not stop someone from unsubscribing.
+  const { loadProfileSafe } = await import('@/config/agency');
+  const agency = loadProfileSafe()?.legalName ?? 'this agency';
   const body = ok
     ? {
         heading: 'You’re unsubscribed',

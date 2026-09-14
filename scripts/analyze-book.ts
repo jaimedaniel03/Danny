@@ -21,9 +21,6 @@ import { parseCsv, toCsvLine, normalizePhoneUS, normalizeState } from '../src/le
 import {
   activeLines,
   annualCommissionCents,
-  ageAt,
-  retentionFor,
-  tenureYears,
   type Household,
   type Policy,
   type PolicyStatus,

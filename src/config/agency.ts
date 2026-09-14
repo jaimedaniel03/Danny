@@ -308,6 +308,30 @@ export function loadProfile(options: { readonly path?: string; readonly force?: 
   return profile;
 }
 
+/**
+ * Load the profile for a DISPLAY-ONLY context, returning null rather than
+ * throwing when it is absent or invalid.
+ *
+ * Two different failure postures, deliberately:
+ *
+ *   `loadProfile()`      throws. Anything that dials, sends, or captures
+ *                        consent must refuse rather than improvise, because an
+ *                        improvised agency name in a consent record is a
+ *                        consent record naming the wrong seller.
+ *
+ *   `loadProfileSafe()`  returns null. A rendered page that cannot find the
+ *                        profile should degrade, not 500 — but its callers must
+ *                        then handle null explicitly rather than substituting a
+ *                        placeholder into anything legally operative.
+ */
+export function loadProfileSafe(): AgencyProfile | null {
+  try {
+    return loadProfile();
+  } catch {
+    return null;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Derived views
 // ─────────────────────────────────────────────────────────────

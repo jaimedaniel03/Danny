@@ -59,7 +59,7 @@ export async function recordConsent(input: ConsentWrite): Promise<{ id: string }
       .eq('phone_e164', input.phoneE164)
       .eq('evidence->>tokenNonce', nonce)
       .maybeSingle();
-    if (existing) return { id: (existing as { id: string }).id };
+    if (existing) return { id: (existing).id };
   }
 
   const { data, error } = await supabase
@@ -82,7 +82,7 @@ export async function recordConsent(input: ConsentWrite): Promise<{ id: string }
     .single();
 
   if (error) throw new Error(`Consent write failed: ${error.message}`);
-  return { id: (data as { id: string }).id };
+  return { id: (data).id };
 }
 
 /**

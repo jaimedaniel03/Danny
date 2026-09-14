@@ -168,8 +168,11 @@ carrier's products.
 technical control — you cannot quote a carrier you are not appointed with, and
 finding that out mid-call is embarrassing.
 
-`LICENSED_STATES` should contain exactly the states you are licensed in. Not the
-states you plan to be. The gate is not the place for optimism.
+The `licenses` block in `agency.config.json` should list exactly the states and
+classes you hold. Not the states you plan to be in, and not "all classes" because
+it was easier to type. The gate is not the place for optimism, and it is the same
+file `npm run leads:triage` sorts against — so an optimistic profile produces an
+optimistic queue you then work by hand.
 
 ---
 
@@ -253,7 +256,7 @@ Every box before the first live dial. No exceptions, including for testing.
 - [ ] National DNC SAN active
 - [ ] Litigator scrubbing contracted
 - [ ] E&O and cyber bound, **TCPA coverage confirmed in writing** — many policies exclude it
-- [ ] Producer licenses verified; `LICENSED_STATES` matches reality exactly
+- [ ] Producer licenses verified; `agency.config.json` licenses match reality exactly
 - [ ] Carrier appointments confirmed for every carrier you will quote
 - [ ] Voice release signed, countersigned, stored
 - [ ] BAAs executed with every subprocessor (health lines only)

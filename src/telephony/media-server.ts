@@ -28,8 +28,9 @@
  * repeats itself after every interruption and one that does not.
  */
 
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'node:http';
+import { secretMatches } from '@/telephony/twilio';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   BargeInDetector,
@@ -132,6 +133,21 @@ export interface CallOutcome {
   readonly durationMs: number;
 }
 
+/**
+ * Decode a WebSocket frame to text.
+ *
+ * `ws` hands back `Buffer | ArrayBuffer | Buffer[]` — the array case is a
+ * FRAGMENTED message, and calling `.toString()` on it yields comma-joined
+ * garbage that fails JSON.parse. Twilio fragments under load and on large
+ * payloads, so this is not theoretical: the symptom is media events silently
+ * dropped during exactly the busy moments you most need them.
+ */
+function decodeFrame(raw: RawData): string {
+  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf-8');
+  if (Buffer.isBuffer(raw)) return raw.toString('utf-8');
+  return Buffer.from(raw).toString('utf-8');
+}
+
 // ── The session ──────────────────────────────────────────────────────────────
 
 export class CallSession {
@@ -169,7 +185,7 @@ export class CallSession {
 
   attach(): void {
     this.ws.on('message', (raw) => {
-      void this.handleMessage(raw.toString()).catch((err: unknown) => {
+      void this.handleMessage(decodeFrame(raw)).catch((err: unknown) => {
         console.error('[media] handler error', err);
       });
     });
@@ -328,8 +344,14 @@ export class CallSession {
     }
   }
 
-  /** A deliberate silence — used after a price, per the coaching loop. */
-  private async pause(ms: number): Promise<void> {
+  /**
+   * A deliberate silence — used after a price, per the coaching loop.
+   *
+   * Frames are written immediately rather than paced with a timer: Twilio
+   * buffers and plays them at 20ms each, so the pause happens on the wire, not
+   * in this process. Sleeping here would delay the NEXT turn as well.
+   */
+  private pause(ms: number): void {
     for (const frame of silenceFrames(ms)) {
       if (this.abortSpeech) return;
       this.send({
@@ -433,7 +455,7 @@ export class CallSession {
         // Hold the silence after a price. The single most coachable behaviour
         // in insurance sales, and free to implement here.
         if (this.state === 'PRESENTING_QUOTE' && /\d/.test(chunk.text)) {
-          await this.pause(900);
+          this.pause(900);
         }
       }
     } catch (err) {
@@ -519,7 +541,7 @@ export function startMediaServer(options: MediaServerOptions): WebSocketServer {
 
     // Same two-factor check as the HTTP webhooks: a media stream that anyone
     // can open is a media stream anyone can put audio into.
-    if (url.searchParams.get('s') !== options.webhookSecret) {
+    if (!secretMatches(url.searchParams.get('s'), options.webhookSecret)) {
       ws.close(1008, 'unauthorized');
       return;
     }

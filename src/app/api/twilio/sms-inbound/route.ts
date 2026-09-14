@@ -49,7 +49,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const from = params['From'] ?? '';
   const body = params['Body'] ?? '';
-  const action = classifyInboundSms(body);
+  const { loadProfileSafe } = await import('@/config/agency');
+  const profile = loadProfileSafe();
+  const action = classifyInboundSms(
+    body,
+    profile
+      ? { agencyLegalName: profile.legalName, helpPhoneE164: profile.phone.callerIdE164 }
+      : undefined,
+  );
 
   switch (action.kind) {
     case 'stop': {

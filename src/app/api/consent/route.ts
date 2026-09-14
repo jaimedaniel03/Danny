@@ -79,7 +79,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const { payload } = verdict;
 
-  const agencyLegalName = process.env['AGENCY_LEGAL_NAME'] ?? 'Your Agency';
+  // Required, not defaulted. Consent naming "Your Agency" names nobody, and a
+  // consent record that does not identify the seller is not consent to us.
+  const { loadProfileSafe } = await import('@/config/agency');
+  const profile = loadProfileSafe();
+  if (!profile) {
+    console.error('[consent] agency.config.json missing or invalid — refusing to capture consent');
+    return NextResponse.json(
+      { error: 'We cannot accept this right now. Please call us directly.' },
+      { status: 503 },
+    );
+  }
+  const agencyLegalName = profile.legalName;
+
   let disclosure;
   try {
     disclosure = renderDisclosure({

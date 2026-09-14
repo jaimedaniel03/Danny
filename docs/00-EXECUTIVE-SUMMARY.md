@@ -139,7 +139,8 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 
 ## Status, honestly
 
-**Built and verified** — 99 tests passing, typecheck clean:
+**Built and verified** — 235 tests passing, typecheck and lint clean
+(`npm run verify`):
 
 *Compliance*
 - Gate: consent basis, DNC ×4, calling hours with state overrides and DST,
@@ -181,9 +182,41 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 - Brain: streaming turns with per-sentence guardrail checks before synthesis,
   prompt caching on the stable system block, `effort: low` for turn latency.
 - Deepgram STT with state-dependent endpointing.
+- Dialer: the seam that runs profile → gate → audit row → dial → registry, with
+  the audit row written *before* the dial, never after.
+- Single-use call registry, so one authorization cannot start two sessions.
+- Five Twilio webhook routes (voice, status, AMD, recording, SMS status) behind
+  one shared verification path — signature plus shared secret, compared in
+  constant time. SMS status detects carrier filtering, which otherwise looks
+  exactly like successful delivery.
+- `npm run media` and `npm run call:dry` both run end-to-end without a Twilio
+  account: dry run is the default and substitutes labelled placeholders.
 
-**Not built:** carrier quote APIs, producer dashboard, AMS integrations,
-multi-tenant admin beyond the schema.
+*Own book*
+- Retention-weighted opportunity ranking: monoline 0.80 → bundled 0.94 →
+  with life 0.97, so a home bundle on an auto-only household is scored as the
+  retention play it is rather than as first-year commission.
+- EBR evidence dates computed from renewal history, driving the DNC-registry
+  exemption.
+
+*Coaching*
+- The two tonality prompts as code, with the specific checks — held the silence
+  after price, rushed the disclosure — run against transcripts.
+
+**Deliberately not implemented:** carrier quoting. `src/quoting/port.ts` defines
+the shape and its default adapter *refuses*. Every rating API is per-carrier and
+gated behind an appointment, and a stub returning plausible premiums is worse
+than nothing — a fabricated number spoken out loud is a misrepresentation, and
+one that sounds right is worse than one that obviously isn't.
+
+**Not built:** producer dashboard, AMS integrations, multi-tenant admin beyond
+the schema.
+
+**External, and not ours to finish:** live credentials (Twilio, Fish, Deepgram,
+Anthropic), a DNC SAN for real scrubbing, A2P 10DLC registration, and counsel's
+review of the disclosure language. The code refuses rather than pretends in all
+four cases — the DNC provider reports *listed* when a scrub is unavailable, and
+consent will not render under unreviewed text in production.
 
 **Not dialed:** nothing in this repo has called a live number, and nothing
 should until Phase 0's checklist is complete.

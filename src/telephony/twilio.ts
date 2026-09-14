@@ -18,8 +18,37 @@
  */
 
 import twilio from 'twilio';
+import { timingSafeEqual } from 'node:crypto';
 import { isAuthorizationFresh } from '@/compliance/gate';
 import type { DialAuthorization } from '@/types';
+
+/**
+ * Compare a presented secret against the expected one without leaking its
+ * contents through timing.
+ *
+ * `a !== b` on strings returns at the first differing byte, so how long a
+ * rejection takes is a function of how many leading bytes were right. Over a
+ * network that signal is noisy, but it is recoverable with enough samples, and
+ * what it buys an attacker is the ability to drive the dialer or to open a
+ * media stream on a live call — to hear one side of it and inject audio into
+ * the other. The correct comparison costs one line.
+ *
+ * The length check is not itself a leak: the secret's length is not the secret,
+ * and `timingSafeEqual` throws outright on mismatched buffer lengths.
+ */
+export function secretMatches(presented: string | null, expected: string): boolean {
+  // An empty expected secret means "unconfigured", and two empty buffers compare
+  // equal — so without this line, a blank `TWILIO_WEBHOOK_SECRET` would
+  // authenticate any request that simply omits the value. `loadTwilioConfig`
+  // already refuses to produce one, but `startMediaServer` takes the secret
+  // directly and this is the wrong place to rely on a caller.
+  if (expected === '') return false;
+  if (presented === null) return false;
+  const a = Buffer.from(presented, 'utf-8');
+  const b = Buffer.from(expected, 'utf-8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export interface TwilioConfig {
   readonly accountSid: string;
@@ -31,23 +60,55 @@ export interface TwilioConfig {
   readonly dryRun: boolean;
 }
 
+/**
+ * Read telephony credentials from the environment.
+ *
+ * Two modes, and the asymmetry between them is deliberate:
+ *
+ *  - **Live** (`DANNY_DRY_RUN=false`) — every value is required. A call that
+ *    reaches a real person must be signed by a real account, from a real caller
+ *    id, with a real webhook secret.
+ *  - **Dry run** (anything else, including unset) — missing values are filled
+ *    with obvious placeholders and the substitution is logged. Nothing reaches
+ *    the PSTN in this mode, so requiring a Twilio account to run the media
+ *    server locally or in CI buys no safety and costs everyone a signup.
+ *
+ * Note which way the default falls. Dry run is on unless explicitly turned off,
+ * so the failure mode of a forgotten env var is "placed no calls", never
+ * "placed calls with a placeholder". Production must say `false` out loud.
+ */
 export function loadTwilioConfig(): TwilioConfig {
+  // Fail *safe*: anything other than an explicit "false" keeps dry run on.
+  // A missing env var must not be the thing that starts dialing strangers.
+  const dryRun = process.env['DANNY_DRY_RUN'] !== 'false';
+  const substituted: string[] = [];
+
   const required = (name: string): string => {
     const value = process.env[name];
-    if (!value) throw new Error(`${name} is required for telephony.`);
-    return value;
+    if (value) return value;
+    if (!dryRun) throw new Error(`${name} is required for telephony.`);
+    substituted.push(name);
+    return `DRYRUN_${name}`;
   };
 
-  return {
+  const config: TwilioConfig = {
     accountSid: required('TWILIO_ACCOUNT_SID'),
     authToken: required('TWILIO_AUTH_TOKEN'),
     callerId: required('TWILIO_CALLER_ID'),
     publicBaseUrl: required('PUBLIC_BASE_URL'),
     webhookSecret: required('TWILIO_WEBHOOK_SECRET'),
-    // Fail *safe*: anything other than an explicit "false" keeps dry run on.
-    // A missing env var must not be the thing that starts dialing strangers.
-    dryRun: process.env['DANNY_DRY_RUN'] !== 'false',
+    dryRun,
   };
+
+  if (substituted.length > 0) {
+    console.warn(
+      `[twilio] DRY RUN — placeholder values for ${substituted.join(', ')}. ` +
+        `No call will reach the PSTN. Set DANNY_DRY_RUN=false with real ` +
+        `credentials to dial.`,
+    );
+  }
+
+  return config;
 }
 
 export class AuthorizationStaleError extends Error {
@@ -134,7 +195,7 @@ export function validateWebhook(input: {
   const { signature, url, params, config } = input;
 
   const providedSecret = new URL(url).searchParams.get('s');
-  if (providedSecret !== config.webhookSecret) {
+  if (!secretMatches(providedSecret, config.webhookSecret)) {
     return { valid: false, reason: 'shared secret mismatch' };
   }
 
@@ -205,6 +266,23 @@ export function buildTransferTwiml(input: {
   });
   dial.number(input.producerPhoneE164);
   return response.toString();
+}
+
+/**
+ * End a call in progress.
+ *
+ * Used on answering-machine detection, where continuing would leave an AI
+ * voicemail, and as the backstop when the media server needs the leg torn down
+ * from outside its own socket.
+ */
+export async function hangUpCall(input: {
+  readonly providerSid: string;
+  readonly config: TwilioConfig;
+}): Promise<void> {
+  if (input.config.dryRun || input.providerSid.startsWith('DRYRUN_')) return;
+
+  const client = twilio(input.config.accountSid, input.config.authToken);
+  await client.calls(input.providerSid).update({ status: 'completed' });
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 
 interface ConsentFormProps {
   readonly token: string;
@@ -16,8 +16,7 @@ export function ConsentForm(props: ConsentFormProps) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function submit(): Promise<void> {
     setStatus('saving');
     setError(null);
 
@@ -62,7 +61,15 @@ export function ConsentForm(props: ConsentFormProps) {
   const canSubmit = agreed && name.trim().length >= 2 && status !== 'saving';
 
   return (
-    <form onSubmit={onSubmit}>
+    <form
+      onSubmit={(event) => {
+        // React expects a void handler here. Returning the promise would make
+        // a rejection unhandled; `void` makes the discard deliberate and the
+        // catch inside submit() is what actually reports failure.
+        event.preventDefault();
+        void submit();
+      }}
+    >
       {/* The disclosure sits adjacent to the checkbox, never behind a link.
           "Clear and conspicuous" is a standard the layout either meets or not. */}
       <div style={s.disclosure}>

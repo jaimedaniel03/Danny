@@ -73,3 +73,36 @@ export async function recordInboundMessage(input: {
   });
   if (error) throw new Error(`Inbound message log failed: ${error.message}`);
 }
+
+/**
+ * Delivery status for an outbound message.
+ *
+ * `carrierFiltered` is the field worth watching. It marks the silent A2P 10DLC
+ * failure — the message reports as sent, the carrier drops it, and nothing
+ * arrives. Without a column recording it, the only symptom is that replies stop.
+ */
+export async function recordMessageStatus(input: {
+  readonly providerId: string | null;
+  readonly status: string;
+  readonly errorCode: string | null;
+  readonly carrierFiltered: boolean;
+}): Promise<void> {
+  if (!input.providerId) return;
+
+  const update: Record<string, unknown> = {};
+  if (input.status === 'delivered') update['delivered_at'] = new Date().toISOString();
+  if (input.status === 'failed' || input.status === 'undelivered') {
+    update['failed_at'] = new Date().toISOString();
+    update['failure_reason'] = input.carrierFiltered
+      ? `Carrier filtered (Twilio error ${input.errorCode}). Check A2P 10DLC registration.`
+      : `${input.status}${input.errorCode ? ` (error ${input.errorCode})` : ''}`;
+  }
+  if (Object.keys(update).length === 0) return;
+
+  const { error } = await serviceClient()
+    .from('messages')
+    .update(update)
+    .eq('provider_id', input.providerId);
+
+  if (error) throw new Error(`Message status write failed: ${error.message}`);
+}

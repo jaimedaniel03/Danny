@@ -20,6 +20,7 @@
  */
 
 import twilio from 'twilio';
+import { loadProfileSafe } from '@/config/agency';
 import type { ChannelAuthorization } from './types';
 import type { TwilioConfig } from '@/telephony/twilio';
 
@@ -86,15 +87,16 @@ export function normalizeForGsm7(text: string): string {
     .replace(/[“”]/g, '"')
     .replace(/[–—]/g, '-')
     .replace(/…/g, '...')
-    .replace(/ /g, ' ')
+    .replace(/\u00A0/g, ' ')
     .replace(/[•·]/g, '-');
 }
 
 export class NotRegisteredError extends Error {
   constructor() {
     super(
-      'A2P 10DLC registration is not configured. Set TWILIO_MESSAGING_SERVICE_SID ' +
-        'to a Messaging Service attached to a registered Brand and Campaign. ' +
+      'A2P 10DLC registration is not configured. Set "phone.messagingServiceSid" ' +
+        'in agency.config.json (or TWILIO_MESSAGING_SERVICE_SID) to a Messaging ' +
+        'Service attached to a registered Brand and Campaign. ' +
         'Unregistered A2P traffic is silently filtered by US carriers — messages ' +
         'appear sent and never arrive, which is far harder to debug than an error.',
     );
@@ -108,10 +110,22 @@ export interface SmsConfig {
   readonly messagingServiceSid: string | null;
 }
 
+/**
+ * The Messaging Service SID lives in the agency profile, with an env override.
+ *
+ * It belongs there because `validateProfile` already warns when it is missing —
+ * "SMS will be silently filtered by carriers" — and a warning about a field the
+ * sender does not read is worse than no warning: it tells you the thing is
+ * configured when it is not, and unregistered A2P traffic fails by *looking
+ * like it worked*.
+ */
 export function loadSmsConfig(twilioConfig: TwilioConfig): SmsConfig {
   return {
     twilio: twilioConfig,
-    messagingServiceSid: process.env['TWILIO_MESSAGING_SERVICE_SID'] ?? null,
+    messagingServiceSid:
+      process.env['TWILIO_MESSAGING_SERVICE_SID'] ??
+      loadProfileSafe()?.phone.messagingServiceSid ??
+      null,
   };
 }
 
@@ -212,7 +226,15 @@ export type InboundSmsAction =
  * Matching is on the first word only. "Stop by the office tomorrow" is a
  * conversation, not an opt-out, and treating it as one loses a customer.
  */
-export function classifyInboundSms(body: string): InboundSmsAction {
+export interface InboundSmsContext {
+  readonly agencyLegalName: string;
+  readonly helpPhoneE164: string;
+}
+
+export function classifyInboundSms(
+  body: string,
+  context?: InboundSmsContext,
+): InboundSmsAction {
   const firstWord = body.trim().toLowerCase().replace(/[^a-z-]/g, '');
 
   if (STOP_KEYWORDS.includes(firstWord)) {
@@ -226,9 +248,10 @@ export function classifyInboundSms(body: string): InboundSmsAction {
   if (HELP_KEYWORDS.includes(firstWord)) {
     return {
       kind: 'help',
+      // Carriers require HELP to identify the sender and give a contact route.
       reply:
-        `${process.env['AGENCY_LEGAL_NAME'] ?? 'Our agency'}: insurance quotes and ` +
-        `service. Call ${process.env['TWILIO_CALLER_ID'] ?? 'us'} for help. ` +
+        `${context?.agencyLegalName ?? 'Our agency'}: insurance quotes and service. ` +
+        `Call ${context?.helpPhoneE164 ?? 'us'} for help. ` +
         `Reply STOP to opt out. Msg&data rates may apply.`,
     };
   }

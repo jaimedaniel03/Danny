@@ -121,7 +121,6 @@ export function findOpportunities(household: Household, now = new Date()): reado
   const hasLife = [...lines].some((l) => l.startsWith('life_'));
   const age = ageAt(household.dateOfBirth, now);
   const tenure = tenureYears(household, now);
-  const name = household.primaryFirstName ?? 'they';
 
   // ── Home bundle: the single most valuable pattern in a P&C book ──────────
   if (hasAuto && !hasHome && household.ownsHome !== false) {

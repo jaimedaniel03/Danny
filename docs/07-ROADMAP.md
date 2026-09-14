@@ -21,7 +21,7 @@ weeks in the plan. Skipping it is how this becomes a lawsuit instead of a compan
 | Legal | TCPA-specialist counsel retained. Consent disclosure language drafted and version-stamped. |
 | Insurance | E&O + cyber bound, **TCPA coverage confirmed in writing** — many policies exclude it |
 | Telecom | DNC SAN active. Litigator scrubbing contracted. Twilio numbers with STIR/SHAKEN. |
-| Licensing | Producer licenses verified. `LICENSED_STATES` matches reality exactly. Carrier appointments confirmed. |
+| Licensing | Producer licenses verified. `agency.config.json` licenses match reality exactly. Carrier appointments confirmed. |
 | Voice | Voice release signed and countersigned. Reference audio recorded per `ENROLLMENT_SPEC`. |
 | Engineering | Gate + self-test green in CI, blocking merge. Supabase schema applied. Kill switch tested. |
 

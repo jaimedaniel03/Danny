@@ -27,6 +27,13 @@ import { evaluateGate, type GateInput, type LicenseGrant } from '../src/complian
 import { permissiveTestProvider } from '../src/compliance/dnc';
 import { localClock } from '../src/compliance/calling-hours';
 import {
+  disclosureContext,
+  licenseGrants,
+  licensedStateCodes,
+  loadProfileSafe,
+  PROFILE_PATH,
+} from '../src/config/agency';
+import {
   inferConsentBasis,
   normalizePhoneUS,
   normalizeState,
@@ -48,12 +55,49 @@ function flag(name: string, fallback: string): string {
   return next !== undefined && !next.startsWith('--') ? next : fallback;
 }
 
-const licensedStates = flag('states', process.env['LICENSED_STATES'] ?? 'CA')
-  .split(',')
-  .map((s) => s.trim().toUpperCase())
-  .filter(Boolean);
 const defaultLine = flag('line', 'auto') as LineOfBusiness;
 const outDir = flag('out', 'out');
+
+/**
+ * Triage must sort against the *same* licensing the production gate will apply.
+ *
+ * It used to synthesize licenses from `--states` and grant every class in every
+ * one of them, which quietly inverts the point of the exercise: a life lead in a
+ * P&C-only agency sorts `ai_ready` here and is refused at dial time with
+ * LICENSE_CLASS_MISSING. A triage that disagrees with the gate is worse than no
+ * triage, because you work the queue believing it.
+ *
+ * So the profile wins whenever there is one. `--states` remains for a first run
+ * before `npm run setup`, and that path says out loud that it is guessing.
+ */
+const profile = loadProfileSafe();
+const statesFlag = flag('states', '');
+
+const licensedStates: string[] = profile
+  ? [...licensedStateCodes(profile)]
+  : statesFlag
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+
+if (!profile && licensedStates.length === 0) {
+  console.error(
+    `No ${PROFILE_PATH} and no --states.\n\n` +
+      `Run \`npm run setup\` so triage sorts against the licenses the gate will\n` +
+      `actually enforce. To sort a list before then, pass the states by hand:\n\n` +
+      `  npm run leads:triage -- ${inputPath} --states CA,AZ\n\n` +
+      `That path assumes every license class in every state, which will sort some\n` +
+      `leads optimistically.`,
+  );
+  process.exit(1);
+}
+
+if (profile && statesFlag) {
+  console.warn(
+    `[triage] --states ignored: ${PROFILE_PATH} lists ${licensedStates.join(', ')}.\n` +
+      `         Edit the profile rather than the flag, or the gate will disagree.\n`,
+  );
+}
 
 // ── Load ─────────────────────────────────────────────────────────────────────
 
@@ -112,12 +156,16 @@ interface TriagedLead {
   readonly tzSplit: boolean;
 }
 
-const licenses: LicenseGrant[] = licensedStates.map((stateCode) => ({
-  stateCode,
-  classes: ['p_and_c', 'life', 'health'],
-  // Triage assumes licenses are current; the production gate checks real expiry.
-  expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
-}));
+const licenses: readonly LicenseGrant[] = profile
+  ? licenseGrants(profile)
+  : licensedStates.map((stateCode) => ({
+      stateCode,
+      // No profile means no way to know which classes are held, so this assumes
+      // all three and the report says so. It is the optimistic direction, which
+      // is why the profile path exists.
+      classes: ['p_and_c', 'life', 'health'],
+      expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+    }));
 
 /**
  * Find an instant whose local wall-clock in `tz` is mid-window (~2pm), so the
@@ -264,12 +312,14 @@ for (let r = 1; r < rows.length; r++) {
     ebr: { lastTransactionAt: null, lastInquiryAt: null },
     medicare: null,
     attempts: { today: 0, thisWeek: 0, last24h: 0 },
-    disclosure: {
-      agentDisplayName: 'Danny',
-      agencyLegalName: process.env['AGENCY_LEGAL_NAME'] ?? 'Your Agency',
-      agencyNpn: process.env['AGENCY_NPN'] ?? null,
-      medicarePlanCount: null,
-    },
+    disclosure: profile
+      ? disclosureContext(profile)
+      : {
+          agentDisplayName: 'Danny',
+          agencyLegalName: 'Unconfigured Agency',
+          agencyNpn: null,
+          medicarePlanCount: null,
+        },
     dncProvider: permissiveTestProvider,
     at,
     killSwitchEngaged: false,
@@ -346,7 +396,8 @@ console.log(`
 ════════════════════════════════════════════════════════════════
 
   Leads read            ${total}${duplicates ? `   (${duplicates} duplicate number${duplicates === 1 ? '' : 's'})` : ''}
-  Licensed states       ${licensedStates.join(', ')}
+  Licensed states       ${licensedStates.join(', ')}${profile ? '' : '   (from --states, not a profile)'}
+  License classes       ${profile ? [...new Set(licenses.flatMap((l) => l.classes))].join(', ') : 'all assumed — see caveat'}
   Default line          ${defaultLine}
 
   ai_ready              ${String(count('ai_ready')).padStart(4)}   ${pct(count('ai_ready'))}
@@ -363,7 +414,17 @@ console.log(`
      credentials, so every number reported as unlisted. Triage
      sorts your list; it does not clear any number to dial. The
      production gate re-checks with live scrubbing per call.
-
+${
+  profile
+    ? ''
+    : `
+  ⚠  NO AGENCY PROFILE. Licensing came from --states and assumed
+     every class in every one of them, so some rows sorted
+     ai_ready that the production gate will refuse for
+     LICENSE_CLASS_MISSING. Run \`npm run setup\` and triage again
+     before working this list.
+`
+}
   Next steps, in order — see docs/09-LEAD-TRIAGE.md:
     1. Fix and re-run needs_review rows (usually minutes of work).
     2. human_queue is worked by a licensed person, after a real

@@ -94,7 +94,7 @@ export function buildOpeningDisclosure(ctx: DisclosureContext): string {
   if (MEDICARE_LINES.has(ctx.line)) {
     if (!ctx.agencyNpn) {
       throw new Error(
-        'Medicare calls require the agency NPN in the disclosure. Set AGENCY_NPN.',
+        'Medicare calls require the agency NPN in the disclosure. Set "npn" in agency.config.json.',
       );
     }
     parts.push(medicareTpmoDisclaimer(ctx));
