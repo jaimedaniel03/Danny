@@ -15,6 +15,7 @@
 
 import { createInterface } from 'node:readline/promises';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { stdin, stdout } from 'node:process';
 import { validateProfile, PROFILE_PATH, type AgencyProfile, type StateLicense, type ProducerProfile } from '../src/config/agency';
 import type { LicenseClass, LineOfBusiness } from '../src/types';
@@ -270,7 +271,13 @@ ${dim('so a wrong answer changes what the system will and will not do.')}
     .filter(Boolean);
 
   // ── Assemble & validate ───────────────────────────────────
+  // Generated once and then carried forward. Every audit row — authorizations,
+  // calls, consents, messages — is scoped by it, so re-rolling it on a re-run
+  // would orphan everything already recorded under the old one.
+  const agencyId = existing.agencyId ?? randomUUID();
+
   const profile: AgencyProfile = {
+    agencyId,
     legalName,
     displayName,
     npn,

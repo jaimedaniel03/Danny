@@ -139,7 +139,7 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 
 ## Status, honestly
 
-**Built and verified** — 377 tests passing, typecheck and lint clean
+**Built and verified** — 388 tests passing, typecheck and lint clean
 (`npm run verify`):
 
 *Compliance*
@@ -191,6 +191,11 @@ answer sounds like: [`06-VC-TEARDOWN.md`](06-VC-TEARDOWN.md).
 - Dialer: the seam that runs profile → gate → audit row → dial → registry, with
   the audit row written *before* the dial, never after.
 - Single-use call registry, so one authorization cannot start two sessions.
+- Call ledger: the record is opened when Twilio accepts the origination and
+  finalized from the media server's own view, so the disposition, cost, and
+  retention date all land on a row that exists. A do-not-call request reaches
+  the suppression ledger in-turn, not within the ten business days the law
+  allows.
 - Five Twilio webhook routes (voice, status, AMD, recording, SMS status) behind
   one shared verification path — signature plus shared secret, compared in
   constant time. SMS status detects carrier filtering, which otherwise looks

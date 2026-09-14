@@ -1,4 +1,5 @@
 {
+  "agencyId": "7f3d2c1a-9b4e-4f21-8c6d-1a2b3c4d5e6f",
   "legalName": "Ruiz Family Insurance LLC",
   "displayName": "Ruiz Insurance",
   "npn": "19283746",
@@ -17,13 +18,21 @@
   "licenses": [
     {
       "stateCode": "CA",
-      "classes": ["p_and_c"],
+      "classes": [
+        "p_and_c"
+      ],
       "licenseNumber": "0M12345",
       "expiresAt": "2027-06-30"
     }
   ],
-  "lines": ["auto", "home"],
-  "appointedCarriers": ["Safeco", "Travelers"],
+  "lines": [
+    "auto",
+    "home"
+  ],
+  "appointedCarriers": [
+    "Safeco",
+    "Travelers"
+  ],
   "phone": {
     "callerIdE164": "+15105550100",
     "messagingServiceSid": null

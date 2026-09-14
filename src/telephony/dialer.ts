@@ -136,6 +136,65 @@ export function loggingCallbacks(): DialCallbacks {
 }
 
 /**
+ * Callbacks that write what happened.
+ *
+ * The production default. `loggingCallbacks` was the only implementation for a
+ * while, which meant a real call's disposition went to stdout and nowhere else:
+ * no history, no cost accounting, and — worse — a do-not-call request honoured
+ * out loud on the call and never written to the suppression ledger, so the next
+ * campaign would dial them again.
+ *
+ * Failures are logged rather than thrown. The call is already over by the time
+ * these run; throwing cannot un-place it, and an exception escaping the media
+ * server's `finish()` would take the socket down with it.
+ */
+export function persistingCallbacks(input: {
+  readonly callRecordId: string;
+  readonly contactId: string;
+}): DialCallbacks {
+  return {
+    onComplete: async (outcome) => {
+      try {
+        const { recordCallOutcomeById } = await import('@/db/calls');
+        await recordCallOutcomeById({
+          callRecordId: input.callRecordId,
+          disposition: outcome.disposition,
+          finalState: outcome.finalState,
+          durationSeconds: Math.round(outcome.durationMs / 1000),
+          aiDisclosedAt: outcome.aiDisclosedAt,
+        });
+      } catch (err) {
+        console.error('[dial] outcome write failed', err);
+      }
+    },
+
+    onDncRequested: async (phoneE164) => {
+      try {
+        // Written in-turn, not within the ten business days the law allows —
+        // and this is the write that makes the promise the agent just spoke
+        // out loud actually true.
+        const { suppressNumber } = await import('@/db/consents');
+        await suppressNumber({
+          phoneE164,
+          reason: `Requested on call ${input.callRecordId}`,
+        });
+      } catch (err) {
+        // The one failure here worth shouting about: the prospect was told they
+        // were removed and they were not.
+        console.error(
+          `[dial] SUPPRESSION WRITE FAILED for ${phoneE164} — this number was ` +
+            `promised removal and is NOT suppressed. Fix by hand.`,
+          err,
+        );
+      }
+    },
+
+    onTransferRequested: () =>
+      console.info(`[dial] transfer requested on ${input.callRecordId}`),
+  };
+}
+
+/**
  * Originate one call.
  *
  * Returns the gate's refusals rather than throwing on them: a refusal is an
@@ -183,7 +242,7 @@ export async function dial(
     const { recordDialAuthorization } = await import('@/db/authorizations');
     await recordDialAuthorization({
       callRecordId,
-      agencyId: profile.legalName,
+      agencyId: profile.agencyId,
       contactId: contact.id,
       consentId: authorization.consentId,
       line,
@@ -224,6 +283,28 @@ export async function dial(
   registerPendingCall(callRecordId, deps);
 
   const placed = await placeCall({ authorization, config, callRecordId });
+
+  // Open the call record now that Twilio has assigned a SID. Every later write
+  // — status, recording, retention date, outcome — is an UPDATE against this
+  // row, and an UPDATE that matches nothing succeeds silently, so without this
+  // insert the entire call ledger stays empty and says nothing about it.
+  if (!placed.dryRun) {
+    try {
+      const { recordCallStarted } = await import('@/db/calls');
+      await recordCallStarted({
+        callRecordId,
+        agencyId: profile.agencyId,
+        contactId: contact.id,
+        providerSid: placed.providerSid,
+        line,
+        startedAt: at,
+      });
+    } catch (err) {
+      // The call is already ringing; there is nothing to undo. Losing the
+      // ledger row is bad, dropping a live authorized call over it is worse.
+      console.error('[dial] call record insert failed — call is live but unrecorded', err);
+    }
+  }
 
   return {
     ok: true,

@@ -47,6 +47,16 @@ export interface StateLicense {
 }
 
 export interface AgencyProfile {
+  /**
+   * The agency's row id, as a UUID.
+   *
+   * Every audit row — authorizations, calls, consents, messages — is scoped by
+   * it, and the schema declares it a `uuid` foreign key. It used to be passed
+   * as `legalName`, which Postgres rejects outright, so no audit row could be
+   * written outside dry run. Generated once by `npm run setup` and then left
+   * alone: changing it orphans everything already recorded under the old one.
+   */
+  readonly agencyId: string;
   /** Exactly as it appears on the license and in the disclosure. */
   readonly legalName: string;
   /** What customers call you, if different. Used in email copy. */
@@ -114,6 +124,7 @@ const USPS = new Set([
 
 const E164 = /^\+[1-9]\d{7,14}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function validateProfile(profile: AgencyProfile, now = new Date()): readonly ProfileProblem[] {
   const problems: ProfileProblem[] = [];
@@ -125,6 +136,14 @@ export function validateProfile(profile: AgencyProfile, now = new Date()): reado
   };
 
   // ── Identity ──────────────────────────────────────────────
+  if (!UUID.test(profile.agencyId)) {
+    blocking(
+      'agencyId',
+      `"${profile.agencyId}" is not a UUID. Every audit row is scoped by it and the ` +
+        `schema declares it a uuid foreign key, so a non-UUID means no call, consent, ` +
+        `or authorization can be recorded at all. Run \`npm run setup\` to generate one.`,
+    );
+  }
   if (!profile.legalName.trim()) {
     blocking('legalName', 'Required. This is the name spoken in the AI disclosure and named in every consent record.');
   }

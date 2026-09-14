@@ -36,6 +36,83 @@ export function retentionDaysFor(line: LineOfBusiness): number {
   return 1461;
 }
 
+/**
+ * Open the call record, immediately after Twilio accepts the origination.
+ *
+ * Everything else in this file is an UPDATE, and for a long time nothing was an
+ * INSERT — so every status, recording and outcome write matched zero rows and
+ * returned no error, because a Postgres UPDATE that touches nothing is a
+ * success. The visible effect was no call history, no cost accounting, and no
+ * retention date on any recording, all of it silent.
+ *
+ * `authorizationId` is the id the gate minted and the dialer already wrote to
+ * `dial_authorizations`, so the row is tied to its evidence from the first
+ * moment rather than from whenever a webhook happens to arrive.
+ */
+export async function recordCallStarted(input: {
+  readonly callRecordId: string;
+  readonly agencyId: string;
+  readonly contactId: string;
+  readonly providerSid: string;
+  readonly line: LineOfBusiness;
+  readonly startedAt: Date;
+}): Promise<void> {
+  const { error } = await serviceClient()
+    .from('calls')
+    .insert({
+      id: input.callRecordId,
+      agency_id: input.agencyId,
+      contact_id: input.contactId,
+      authorization_id: input.callRecordId,
+      provider_sid: input.providerSid,
+      direction: 'outbound',
+      line_of_business: input.line,
+      started_at: input.startedAt.toISOString(),
+    });
+
+  if (error) throw new Error(`Call record insert failed: ${error.message}`);
+}
+
+/**
+ * Finalize the call from the media server's own view of it.
+ *
+ * Keyed on `id`, which is the `callRecordId` the dialer generated — not on
+ * `provider_sid`, which is back-filled by a webhook that can arrive after the
+ * media stream has already ended. Keying on the late value meant the update
+ * could match nothing and say nothing.
+ */
+export async function recordCallOutcomeById(input: {
+  readonly callRecordId: string;
+  readonly disposition: CallDisposition;
+  readonly finalState: string;
+  readonly durationSeconds: number;
+  readonly aiDisclosedAt: Date | null;
+}): Promise<void> {
+  const { error, count } = await serviceClient()
+    .from('calls')
+    .update(
+      {
+        disposition: input.disposition,
+        final_state: input.finalState,
+        duration_seconds: input.durationSeconds,
+        ended_at: new Date().toISOString(),
+        ai_disclosed_at: input.aiDisclosedAt?.toISOString() ?? null,
+      },
+      { count: 'exact' },
+    )
+    .eq('id', input.callRecordId);
+
+  if (error) throw new Error(`Call outcome write failed: ${error.message}`);
+  // An update that matched nothing is the failure this whole comment block is
+  // about. Say so rather than returning success.
+  if (count === 0) {
+    throw new Error(
+      `Call outcome write matched no row for ${input.callRecordId}. The call ` +
+        `record was never opened — check that recordCallStarted ran.`,
+    );
+  }
+}
+
 export async function recordCallStatus(input: {
   readonly callRecordId: string | null;
   readonly providerSid: string | null;

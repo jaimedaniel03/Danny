@@ -13,6 +13,7 @@ import { validateProfile, licenseGrants, primaryProducer, voiceSubject, type Age
 const NOW = new Date('2026-09-01T00:00:00Z');
 
 const VALID: AgencyProfile = {
+  agencyId: '7f3d2c1a-9b4e-4f21-8c6d-1a2b3c4d5e6f',
   legalName: 'Ruiz Family Insurance LLC',
   displayName: 'Ruiz Insurance',
   npn: '19283746',
@@ -214,5 +215,31 @@ describe('disclosure review', () => {
     expect(problems.some((p) => p.field === 'disclosureVersion')).toBe(true);
     // A warning, not a blocker — you need to be able to develop against it.
     expect(blockers(draft)).toEqual([]);
+  });
+});
+
+describe('agencyId', () => {
+  it('rejects a profile whose agencyId is not a UUID', () => {
+    // It used to be passed as the legal name. Postgres declares the column a
+    // uuid foreign key and rejects that outright, so every audit write — the
+    // authorization row, the call row, consents — failed in production and
+    // nowhere else, because dry run swallows the error.
+    const problems = validateProfile({ ...VALID, agencyId: 'Ruiz Family Insurance LLC' });
+    const blocking = problems.filter((p) => p.severity === 'blocking');
+
+    expect(blocking.map((p) => p.field)).toContain('agencyId');
+  });
+
+  it.each(['', 'not-a-uuid', '12345', '7f3d2c1a9b4e4f218c6d1a2b3c4d5e6f'])(
+    'rejects %j',
+    (agencyId) => {
+      const problems = validateProfile({ ...VALID, agencyId });
+      expect(problems.some((p) => p.field === 'agencyId' && p.severity === 'blocking')).toBe(true);
+    },
+  );
+
+  it('accepts a real UUID', () => {
+    const problems = validateProfile(VALID);
+    expect(problems.some((p) => p.field === 'agencyId')).toBe(false);
   });
 });
