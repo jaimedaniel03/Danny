@@ -45,6 +45,18 @@ export const LINE_LICENSE: Record<LineOfBusiness, LicenseClass> = {
   life_final_expense: 'life',
 };
 
+/**
+ * Every line, at runtime.
+ *
+ * Derived from `LINE_LICENSE` rather than written out a second time.
+ * `LINE_LICENSE` is a `Record` over the whole union, so adding a line to the
+ * type without adding it there is a compile error — which means this list
+ * cannot silently fall behind the type the way a hand-maintained copy would.
+ */
+export const LINES_OF_BUSINESS: readonly LineOfBusiness[] = Object.keys(
+  LINE_LICENSE,
+) as LineOfBusiness[];
+
 // ─────────────────────────────────────────────────────────────
 // Consent
 // ─────────────────────────────────────────────────────────────

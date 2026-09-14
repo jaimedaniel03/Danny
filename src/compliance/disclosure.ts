@@ -171,27 +171,64 @@ export function detectDncRequest(utterance: string): boolean {
  * immediately and unconditionally — the AI disclosure promises it, so the
  * runtime has to deliver it or the disclosure was a lie.
  */
+
+/**
+ * Two ways people invoke it, and they need different handling.
+ *
+ * The first is a direct ask — "put me through to an agent". The second is a
+ * question about what they are talking to — "is this a machine?" — which is not
+ * phrased as a request at all but is one: someone who suspects they are talking
+ * to a recording and asks about it is owed a human, and stringing them along is
+ * exactly the conduct the disclosure exists to prevent.
+ *
+ * The question form is generated as a cross-product rather than enumerated by
+ * hand. Hand-enumeration is how the list ended up covering "is this a robot"
+ * and "am I talking to a machine" but not "is this a machine" — the same
+ * question, missed because nobody wrote that particular row.
+ */
+const MACHINE_NOUNS = ['robot', 'machine', 'computer', 'ai', 'bot', 'recording'] as const;
+
+const MACHINE_QUESTION_FRAMES = [
+  'is this a',
+  'is this an',
+  'are you a',
+  'are you an',
+  'am i talking to a',
+  'am i talking to an',
+  'am i speaking to a',
+  'am i speaking to an',
+  'talking to a',
+  'talking to an',
+  'speaking to a',
+  'speaking to an',
+] as const;
+
+const MACHINE_QUESTIONS: readonly string[] = MACHINE_QUESTION_FRAMES.flatMap((frame) =>
+  MACHINE_NOUNS.map((noun) => `${frame} ${noun}`),
+);
+
 export const HUMAN_REQUEST_PHRASES: readonly string[] = [
+  // Asking for a person.
   'real person',
   'a human',
   'speak to a person',
   'talk to a person',
   'talk to someone',
+  'speak to someone',
+  'get me a person',
+  'get me someone',
   'licensed agent',
   'real agent',
-  'is this a robot',
-  'are you a robot',
-  'are you a real',
-  // "Am I talking to a robot?" is the most common phrasing of the question and
-  // was missed by the "are you a…" forms alone. Cover the object, not the subject.
-  'talking to a robot',
-  'talking to a machine',
-  'talking to a computer',
-  'talking to an ai',
-  'talking to a bot',
-  'this a recording',
-  'get me a person',
+  'to an agent',
+  'to a agent',
+  'put me through',
   'transfer me',
+  'connect me',
+  // Asking whether they are talking to one.
+  'are you a real',
+  'are you real',
+  'is this a real person',
+  ...MACHINE_QUESTIONS,
 ];
 
 const NORMALIZED_HUMAN_PHRASES: readonly string[] =

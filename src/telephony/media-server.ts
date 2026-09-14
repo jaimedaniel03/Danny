@@ -53,6 +53,7 @@ import {
   interruptTransition,
   transition,
   REQUIRED_DISCOVERY,
+  SILENCE_TIMEOUT_SECONDS,
   TERMINAL_STATES,
   type ConversationState,
   type Signal,
@@ -175,6 +176,8 @@ export class CallSession {
   private abortSpeech = false;
   private silenceSinceMs = 0;
   private closed = false;
+  /** Set by the first interrupt. See `handleInterrupt`. */
+  private interrupted = false;
 
   constructor(
     private readonly ws: WebSocket,
@@ -241,9 +244,21 @@ export class CallSession {
     // this conversation. Not generated, not skippable, not overridable.
     await this.speak(this.deps.authorization.requiredDisclosure, { interruptible: false });
     this.aiDisclosedAt = new Date();
-    this.advance('DISCLOSURE_SPOKEN');
 
+    // Someone can interrupt *during* the disclosure — it is the moment they
+    // learn they are talking to an AI, so it is the likeliest moment. If they
+    // did, the call is already over: advancing here would log an invalid
+    // transition out of HONORING_DNC, and `takeTurn` would ring the producer a
+    // second time on a transfer, because TRANSFERRING is not a terminal state.
+    if (this.stopped()) return;
+
+    this.advance('DISCLOSURE_SPOKEN');
     await this.takeTurn();
+  }
+
+  /** True once the call is finished or an interrupt has taken it over. */
+  private stopped(): boolean {
+    return this.closed || this.interrupted;
   }
 
   private onMedia(event: TwilioMediaEvent): void {
@@ -261,10 +276,13 @@ export class CallSession {
       }
     }
 
-    // Silence bookkeeping for the dead-line timeout.
+    // Silence bookkeeping for the dead-line timeout. The threshold is the same
+    // constant the utterance path checks — a second hardcoded 12 here would let
+    // the two disagree the first time anyone tuned it.
     this.silenceSinceMs = anySpeech ? 0 : this.silenceSinceMs + frames.length * FRAME_MS;
-    if (this.silenceSinceMs > 12_000 && !this.speaking) {
-      void this.handleInterrupt({ kind: 'SILENCE_TIMEOUT', seconds: 12 });
+    const silentSeconds = this.silenceSinceMs / 1000;
+    if (silentSeconds >= SILENCE_TIMEOUT_SECONDS && !this.speaking) {
+      void this.handleInterrupt({ kind: 'SILENCE_TIMEOUT', seconds: silentSeconds });
     }
   }
 
@@ -341,6 +359,16 @@ export class CallSession {
       this.send({ event: 'mark', streamSid: this.streamSid, mark: { name: markName } });
     } finally {
       this.speaking = false;
+      // The prospect's window to answer starts now.
+      //
+      // Inbound frames carry no speech while we are talking — they are the
+      // prospect politely listening — so the silence counter climbs through
+      // every turn we take. Left alone, a turn longer than the dead-line
+      // threshold means the first frame after we stop instantly trips the
+      // timeout, and the call hangs up on someone who was waiting for us to
+      // finish. Reset it here rather than at the timeout, so the threshold
+      // measures what it claims to: silence *after* a question.
+      this.silenceSinceMs = 0;
     }
   }
 
@@ -385,9 +413,23 @@ export class CallSession {
     await this.takeTurn();
   }
 
+  /**
+   * Handle an interrupt exactly once per call.
+   *
+   * The latch is load-bearing, not defensive. `onMedia` evaluates the silence
+   * timeout on every inbound frame — fifty a second — and each branch below
+   * awaits a full synthesis before it reaches `finish()`. Without the latch the
+   * first frame past the threshold starts a handler, the next forty-nine start
+   * forty-nine more, and the prospect hears the goodbye line overlapping itself
+   * while `onDncRequested` fires fifty times. `finish()` being idempotent does
+   * not help: the damage is all done before anything calls it.
+   */
   private async handleInterrupt(
     interrupt: ReturnType<typeof detectInterrupt> & object,
   ): Promise<void> {
+    if (this.interrupted || this.closed) return;
+    this.interrupted = true;
+
     this.state = interruptTransition(interrupt);
 
     switch (interrupt.kind) {
@@ -441,7 +483,11 @@ export class CallSession {
    * soon as the model finishes writing it, rather than after the whole turn.
    */
   private async takeTurn(attempt = 1): Promise<void> {
-    if (this.closed || TERMINAL_STATES.has(this.state)) return;
+    // `stopped()` rather than `closed` alone: TRANSFERRING and CLOSING_OUT are
+    // not terminal states, so an interrupt that routed there would otherwise
+    // still get a model turn — and on a transfer that means ringing the
+    // producer twice for one call.
+    if (this.stopped() || TERMINAL_STATES.has(this.state)) return;
 
     const spokenThisTurn: string[] = [];
     try {
