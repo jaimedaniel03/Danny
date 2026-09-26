@@ -1,0 +1,375 @@
+/* ── Intro ─────────────────────────────────────────────────── */
+
+.intro {
+  padding-block: clamp(2.5rem, 1.5rem + 5vw, 6rem) clamp(3rem, 2rem + 4vw, 6rem);
+}
+
+.introGrid {
+  display: grid;
+  gap: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+  align-items: center;
+}
+
+.introCopy > * + * {
+  margin-top: var(--space-5);
+}
+
+.title {
+  max-width: 14ch;
+}
+
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2em 0.45em;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+  max-width: 30rem;
+  font-family: var(--font-serif);
+  font-size: var(--step-2);
+  line-height: 1.2;
+}
+
+.flowArrow {
+  color: var(--coral);
+  font-family: var(--font-sans);
+  font-weight: 300;
+}
+
+.introMedia {
+  position: relative;
+  margin: 0;
+  /* Room for the offset block so it never pushes past the gutter. */
+  margin-right: 12px;
+}
+
+.photo img {
+  border-radius: var(--radius-lg);
+  background: var(--paper-3);
+  box-shadow: 12px 12px 0 var(--coral-wash);
+}
+
+@media (min-width: 60rem) {
+  .introGrid {
+    grid-template-columns: 1.1fr 1fr;
+  }
+
+  .introMedia {
+    margin-right: 16px;
+  }
+
+  .photo img {
+    box-shadow: 16px 16px 0 var(--coral-wash);
+  }
+}
+
+/* ── Why we exist ──────────────────────────────────────────── */
+
+.whySection {
+  border-top: 1px solid var(--rule);
+}
+
+.why {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.whyHead > * + * {
+  margin-top: var(--space-4);
+}
+
+.whyHead h2 {
+  max-width: 14ch;
+}
+
+.whyBody {
+  max-width: 42rem;
+}
+
+.whyBody > * + * {
+  margin-top: var(--space-5);
+}
+
+.mission {
+  margin-block: var(--space-6);
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
+  border-left: 3px solid var(--coral);
+}
+
+.missionLabel {
+  font-size: var(--step-sm);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: var(--space-2);
+}
+
+.missionText {
+  font-family: var(--font-serif);
+  font-size: var(--step-2);
+  line-height: 1.3;
+}
+
+.prioritiesTitle {
+  font-size: var(--step-1);
+  margin-bottom: var(--space-4);
+}
+
+.priorities {
+  border-top: 2px solid var(--ink);
+}
+
+.priorities > div {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.priorities dt {
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.priorities dd {
+  margin: 0;
+}
+
+@media (min-width: 40rem) {
+  .priorities > div {
+    grid-template-columns: 10rem 1fr;
+    gap: var(--space-5);
+    align-items: baseline;
+  }
+}
+
+@media (min-width: 60rem) {
+  .why {
+    grid-template-columns: 1fr 1.5fr;
+    gap: clamp(3rem, 2rem + 4vw, 6rem);
+  }
+
+  .whyHead {
+    position: sticky;
+    top: 7rem;
+    align-self: start;
+  }
+}
+
+/* ── Founders (verified account only) ─────────────────────── */
+
+.founders {
+  max-width: 50rem;
+}
+
+.founders > * + * {
+  margin-top: var(--space-5);
+}
+
+.foundersProse {
+  font-size: var(--step-0);
+}
+
+.founderList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
+.founderList li {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.founderRole {
+  font-size: var(--step-sm);
+  color: var(--ink-muted);
+}
+
+/* ── Principles ────────────────────────────────────────────── */
+
+.principlesHead {
+  max-width: 44rem;
+  margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem);
+}
+
+.principlesHead > * + * {
+  margin-top: var(--space-4);
+}
+
+.principle {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  column-gap: var(--space-4);
+  row-gap: var(--space-3);
+  padding-block: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
+.principle:first-child {
+  border-top: 2px solid var(--ink);
+}
+
+.principle:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.principleNumber {
+  font-family: var(--font-serif);
+  font-size: var(--step-2);
+  line-height: 1.1;
+  color: var(--coral-text);
+}
+
+.principleTitle {
+  font-size: var(--step-1);
+  line-height: var(--leading-snug);
+}
+
+/* Narrow screens: the body takes the full width under its number and title. */
+.principleBody {
+  grid-column: 1 / -1;
+  max-width: var(--measure);
+}
+
+@media (min-width: 40rem) {
+  .principleNumber {
+    grid-row: span 2;
+  }
+
+  .principleBody {
+    grid-column: 2;
+  }
+}
+
+@media (min-width: 60rem) {
+  .principle {
+    grid-template-columns: 4rem minmax(0, 20rem) minmax(0, 1fr);
+    column-gap: clamp(1.5rem, 1rem + 2vw, 3rem);
+    align-items: baseline;
+    padding-block: var(--space-6);
+  }
+
+  .principleNumber {
+    grid-row: auto;
+    font-size: var(--step-3);
+    line-height: 1;
+  }
+
+  .principleBody {
+    grid-column: 3;
+  }
+}
+
+/* ── Financial freedom (ink) ──────────────────────────────── */
+
+.freedom {
+  display: grid;
+  gap: var(--space-7);
+  align-items: start;
+}
+
+.freedomHead > * + * {
+  margin-top: var(--space-5);
+}
+
+.freedomHead h2 {
+  max-width: 13ch;
+}
+
+.freedomLede {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  max-width: 40ch;
+  color: #dce6e8;
+}
+
+.notTitle {
+  font-size: var(--step-2);
+  margin-bottom: var(--space-5);
+}
+
+.notList {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 40rem;
+}
+
+.notList li {
+  padding-left: var(--space-5);
+  border-left: 3px solid var(--coral);
+}
+
+.notList li > * + * {
+  margin-top: var(--space-2);
+}
+
+.notList strong {
+  color: var(--white);
+}
+
+.inkLink {
+  gap: var(--space-2);
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
+}
+
+.inkLink svg {
+  transition: transform var(--dur) var(--ease);
+}
+
+.inkLink:hover svg {
+  transform: translateX(3px);
+}
+
+@media (min-width: 60rem) {
+  .freedom {
+    grid-template-columns: 1fr 1.15fr;
+    gap: clamp(3rem, 2rem + 4vw, 6rem);
+  }
+}
+
+/* ── Where next ────────────────────────────────────────────── */
+
+.nextTitle {
+  max-width: 18ch;
+  margin-bottom: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+}
+
+.paths {
+  display: grid;
+  gap: var(--space-7);
+}
+
+.path {
+  padding-top: var(--space-5);
+  border-top: 2px solid var(--ink);
+  max-width: 34rem;
+}
+
+.path > * + * {
+  margin-top: var(--space-4);
+}
+
+.path h3 {
+  font-size: var(--step-2);
+}
+
+.path :global(.btn) {
+  margin-top: var(--space-5);
+}
+
+@media (min-width: 48rem) {
+  .paths {
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(2rem, 1rem + 4vw, 5rem);
+  }
+}

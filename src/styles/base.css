@@ -1,0 +1,643 @@
+/*
+ * All Set Check — base styles and components
+ *
+ * Layers: reset → type → layout primitives → controls → states → motion.
+ * Component layout lives in CSS modules next to components; the shared
+ * vocabulary (buttons, fields, containers) lives here so every page speaks it.
+ */
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 6rem;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--step-0);
+  line-height: var(--leading-body);
+  font-feature-settings: 'kern', 'liga';
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: break-word;
+}
+
+img,
+picture,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+input,
+button,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:where(ul, ol)[role='list'] {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Type ──────────────────────────────────────────────────────────────── */
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.012em;
+  margin: 0;
+  text-wrap: balance;
+  font-optical-sizing: auto;
+}
+
+h1 {
+  font-size: var(--step-5);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: var(--step-4);
+}
+
+h3 {
+  font-size: var(--step-2);
+  line-height: var(--leading-snug);
+}
+
+h4 {
+  font-size: var(--step-1);
+  line-height: var(--leading-snug);
+}
+
+p,
+ul,
+ol,
+dl {
+  margin: 0;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+strong {
+  font-weight: 650;
+}
+
+a {
+  color: var(--coral-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  transition:
+    color var(--dur-fast) var(--ease),
+    text-decoration-color var(--dur-fast) var(--ease),
+    text-decoration-thickness var(--dur-fast) var(--ease);
+}
+
+a:hover {
+  color: var(--ink);
+  text-decoration-thickness: 2px;
+}
+
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--step-sm);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.lede {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  max-width: var(--measure-narrow);
+}
+
+.prose {
+  max-width: var(--measure);
+}
+
+.prose > * + * {
+  margin-top: 1em;
+}
+
+.prose h2,
+.prose h3 {
+  margin-top: 1.6em;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.25em;
+}
+
+.prose li + li {
+  margin-top: 0.4em;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.fine-print {
+  font-size: var(--step-sm);
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+/* ── Layout primitives ─────────────────────────────────────────────────── */
+
+.container {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.section {
+  padding-block: var(--section);
+}
+
+.section--tint {
+  background: var(--paper-2);
+}
+
+.section--ink {
+  background: var(--ink);
+  color: var(--paper);
+  --focus: var(--focus-on-dark);
+}
+
+.section--ink a {
+  color: var(--coral-soft);
+}
+
+.section--ink a:hover {
+  color: var(--white);
+}
+
+.section--ink .eyebrow,
+.section--ink .muted {
+  color: #c9d6d9;
+}
+
+.stack > * + * {
+  margin-top: var(--stack-gap, var(--space-5));
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -10rem;
+  z-index: 100;
+  padding: var(--space-3) var(--space-5);
+  min-height: var(--target);
+  display: inline-flex;
+  align-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 650;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+  color: var(--paper);
+}
+
+/* ── Focus ─────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  min-height: var(--target-comfy);
+  min-width: var(--target);
+  padding: 0.7rem 1.4rem;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: var(--step-sm);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.005em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn--primary:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+  color: var(--paper);
+  box-shadow: inset 0 -3px 0 var(--coral);
+}
+
+.btn--secondary {
+  background: transparent;
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.btn--secondary:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* On ink surfaces the roles invert. Coral stays an accent, never the fill
+   behind small text: coral on ink is 4.42:1, below the 4.5:1 body minimum. */
+.btn--light {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+
+.btn--light:hover {
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: inset 0 -3px 0 var(--coral);
+}
+
+.btn--outline-light {
+  background: transparent;
+  border-color: var(--paper);
+  color: var(--paper);
+}
+
+.btn--outline-light:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  padding-inline: var(--space-3);
+}
+
+.btn--quiet:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.btn--danger {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--white);
+}
+
+.btn--danger:hover {
+  background: #8f1c13;
+  border-color: #8f1c13;
+  color: var(--white);
+}
+
+.btn[disabled],
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn__arrow {
+  transition: transform var(--dur) var(--ease);
+}
+
+.btn:hover .btn__arrow {
+  transform: translateX(3px);
+}
+
+/* Text links that behave like controls still need a 44px target. */
+.target {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+}
+
+/* ── Fields ────────────────────────────────────────────────────────────── */
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.field + .field,
+.field + fieldset,
+fieldset + .field,
+fieldset + fieldset {
+  margin-top: var(--space-5);
+}
+
+.field__label,
+.fieldset__legend {
+  font-size: var(--step-sm);
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.field__optional {
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.field__hint {
+  font-size: var(--step-sm);
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.field__error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: var(--step-sm);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--error);
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: var(--target-comfy);
+  padding: 0.65rem 0.85rem;
+  background: var(--white);
+  border: 1.5px solid var(--field-edge);
+  border-radius: var(--radius-sm);
+  font-size: var(--step-sm);
+  line-height: 1.4;
+  color: var(--ink);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%2317323A' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+}
+
+.input:hover,
+.select:hover {
+  border-color: var(--ink);
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
+  border-color: var(--error);
+  border-width: 2px;
+  background: var(--error-wash);
+}
+
+.input:disabled,
+.select:disabled {
+  background: var(--paper-2);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.input::placeholder {
+  color: #6b7f84;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.fieldset__legend {
+  padding: 0;
+  margin-bottom: var(--space-3);
+}
+
+/* Radio and checkbox rows: the whole row is the label, so the target is the
+   full row height (≥44px), not the 20px box. */
+.choice {
+  display: grid;
+  grid-template-columns: 1.375rem 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  min-height: var(--target);
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  font-size: var(--step-sm);
+  line-height: 1.45;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.choice + .choice {
+  margin-top: var(--space-2);
+}
+
+.choice:hover {
+  border-color: var(--ink);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--paper-2);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.choice input {
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: 0.05rem 0 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.choice input:focus-visible {
+  outline: none;
+}
+
+.choice--plain {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0;
+}
+
+.choice--plain:hover,
+.choice--plain:has(input:checked) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.choice[data-invalid='true'] {
+  border-color: var(--error);
+}
+
+/* ── Notices ───────────────────────────────────────────────────────────── */
+
+.notice {
+  padding: var(--space-4) var(--space-5);
+  border-left: 4px solid var(--ink);
+  background: var(--paper-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.notice--error {
+  border-color: var(--error);
+  background: var(--error-wash);
+}
+
+.notice--success {
+  border-color: var(--success);
+  background: var(--success-wash);
+}
+
+.notice--warning {
+  border-color: var(--coral-text);
+  background: var(--coral-wash);
+}
+
+.notice__title {
+  font-weight: 700;
+  margin-bottom: var(--space-1);
+}
+
+/* ── Motion ────────────────────────────────────────────────────────────── */
+/*
+ * Scroll reveals are opt-in per element and applied only by script: an
+ * element is hidden only after the observer has started and found it below
+ * the fold. No script, a script error, or reduced motion → content is simply
+ * there. It is never hidden by CSS alone.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal-state='pending'] {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  [data-reveal-state='shown'] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 480ms var(--ease),
+      transform 480ms var(--ease);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .btn {
+    border: 2px solid ButtonText;
+  }
+
+  .choice {
+    border-color: ButtonText;
+  }
+}

@@ -21,6 +21,12 @@ import { ConsentForm } from './consent-form';
 
 export const dynamic = 'force-dynamic';
 
+// These URLs carry signed tokens tied to one person's phone number.
+export const metadata = {
+  title: 'Okay a follow-up call',
+  robots: { index: false, follow: false, nocache: true },
+};
+
 interface PageProps {
   readonly params: Promise<{ readonly token: string }>;
 }

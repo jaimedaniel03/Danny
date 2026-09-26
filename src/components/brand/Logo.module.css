@@ -1,0 +1,36 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: var(--target);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.logo:hover {
+  color: var(--ink);
+}
+
+.paper,
+.paper:hover {
+  color: var(--paper);
+}
+
+.mark {
+  flex: none;
+  transition: transform var(--dur) var(--ease);
+}
+
+.logo:hover .mark {
+  transform: rotate(-4deg) scale(1.04);
+}
+
+.word {
+  font-family: var(--font-serif);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variation-settings: 'opsz' 48;
+  white-space: nowrap;
+}

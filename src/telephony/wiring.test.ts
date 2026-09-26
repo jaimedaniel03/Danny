@@ -8,7 +8,7 @@
  * Nothing here reaches the PSTN: `DANNY_DRY_RUN` resolves the dialer to a sink.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dial, loggingCallbacks } from './dialer';
 import {
   claimPendingCall,
@@ -111,6 +111,16 @@ function request(over: Partial<Parameters<typeof dial>[0]> = {}) {
 
 beforeEach(() => {
   resetRegistry();
+  // The gate evaluates at AT, and placeCall checks the authorization's
+  // freshness against the wall clock. Freeze the wall clock at AT so the
+  // suite means the same thing on every day it runs; without this it began
+  // failing once the real date passed AT's one-minute authorization window.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(AT);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('the happy path connects end to end', () => {

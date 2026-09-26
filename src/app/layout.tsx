@@ -1,17 +1,64 @@
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { Newsreader, Public_Sans } from 'next/font/google';
+import { siteIndexable, publicBaseUrl } from '@/allset/env';
+import { isLaunchReady } from '@/allset/content/facts';
+import '@/styles/tokens.css';
+import '@/styles/base.css';
 
-export const metadata = {
-  title: 'Danny',
-  description: 'AI producer for insurance agencies',
-  // Consent pages must never be indexed: the URLs carry signed tokens tied to
-  // a specific person's phone number.
-  robots: { index: false, follow: false },
+const serif = Newsreader({
+  subsets: ['latin'],
+  variable: '--font-newsreader',
+  display: 'swap',
+  axes: ['opsz'],
+});
+
+const sans = Public_Sans({
+  subsets: ['latin'],
+  variable: '--font-public-sans',
+  display: 'swap',
+});
+
+/**
+ * Indexing needs two things: the operator saying yes (SITE_INDEXABLE=true)
+ * and every launch-required business fact verified. Until both, search
+ * engines are told to stay away — an insurance site that names no licensed
+ * entity should not be findable.
+ */
+const indexable = siteIndexable() && isLaunchReady();
+
+export const metadata: Metadata = {
+  metadataBase: new URL(publicBaseUrl() ?? 'http://localhost:3000'),
+  title: {
+    default: 'All Set Check — life and health coverage, explained plainly',
+    template: '%s · All Set Check',
+  },
+  description:
+    'Understand your options. Protect your people. Choose what fits your budget. Plain-language help with life and health insurance for working families.',
+  applicationName: 'All Set Check',
+  robots: indexable
+    ? { index: true, follow: true }
+    : { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
+  openGraph: {
+    type: 'website',
+    siteName: 'All Set Check',
+    locale: 'en_US',
+  },
+  twitter: { card: 'summary_large_image' },
+  formatDetection: { telephone: false, email: false, address: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#17323A',
+  width: 'device-width',
+  initialScale: 1,
+  // No maximumScale: people must be able to zoom.
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+    <html lang="en" className={`${serif.variable} ${sans.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }

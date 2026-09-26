@@ -38,3 +38,7 @@ agency.config.json
 # Book of business export carries customer PII and policy data
 book/*
 !book/BOOK-TEMPLATE.csv
+
+# Playwright
+test-results/
+playwright-report/

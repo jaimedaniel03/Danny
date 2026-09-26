@@ -1,0 +1,83 @@
+/* Shared layout for interior pages: intro, form grids, asides. */
+
+.intro {
+  padding-block: clamp(3rem, 2rem + 4vw, 6rem) clamp(2rem, 1.5rem + 2vw, 3.5rem);
+}
+
+.intro :global(.container) > * + * {
+  margin-top: var(--space-5);
+}
+
+.title {
+  font-size: var(--step-5);
+  max-width: 16ch;
+}
+
+.formSection {
+  padding-bottom: var(--section);
+}
+
+.formGrid {
+  display: grid;
+  gap: var(--space-8);
+  align-items: start;
+}
+
+.formColumn {
+  max-width: 40rem;
+}
+
+.aside {
+  display: grid;
+  gap: var(--space-7);
+}
+
+.asideTitle {
+  font-size: var(--step-1);
+  margin-bottom: var(--space-4);
+}
+
+.timeline {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.timeline li {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.timelineNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--coral-wash);
+  font-family: var(--font-serif);
+  font-weight: 600;
+}
+
+.direct {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--rule);
+}
+
+.direct > p {
+  max-width: 36ch;
+}
+
+@media (min-width: 60rem) {
+  .formGrid {
+    grid-template-columns: minmax(0, 40rem) minmax(16rem, 1fr);
+    gap: clamp(3rem, 2rem + 5vw, 8rem);
+  }
+
+  .aside {
+    position: sticky;
+    top: 7rem;
+  }
+}
