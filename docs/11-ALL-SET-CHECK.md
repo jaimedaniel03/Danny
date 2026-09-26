@@ -154,6 +154,24 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 | `ALLOW_PRELAUNCH_INQUIRIES` | preview only | `true` opens the forms before launch, for a private, access-protected preview. Without it, forms stay closed (enforced in the server action) until every launch-required fact is verified. Never set it on a public deployment before launch |
 | `BUSINESS_TIMEZONE` | no | IANA zone for "due today" (default `America/Chicago`) |
 
+### Deployment
+
+Vercel project `all-set-check`, with Vercel Authentication on for **all**
+deployments (production included), so every URL requires a Vercel login
+until that setting changes. Without `DATABASE_URL` the site runs as a
+preview: public pages work, both forms show as closed, and the lead desk
+says it isn't connected. Without `PUBLIC_BASE_URL`, links and metadata use
+the deployment's own Vercel address.
+
+To bring the lead desk up, set `DATABASE_URL`, `APP_SECRET`, `CRON_SECRET`
+and `ADMIN_SETUP_TOKEN` (plus `ALLOW_PRELAUNCH_INQUIRIES=true` for a private
+test run), then redeploy. The daily cron jobs are registered on production
+deployments and answer 401 until `CRON_SECRET` is set.
+
+The Next.js image optimizer is off (`images.unoptimized`): photos ship
+pre-encoded, so `sharp` runs only in `scripts/build-images.ts`, never at
+runtime.
+
 ### Database
 
 1. Apply `supabase/migrations/0003_allset_site.sql` (as `postgres`).

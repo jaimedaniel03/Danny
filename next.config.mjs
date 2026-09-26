@@ -35,6 +35,9 @@ const securityHeaders = [
 export default {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Photos ship pre-encoded (scripts/build-images.ts), so the on-demand optimizer
+  // is never needed. Turning it off removes the one runtime path into sharp/libvips.
+  images: { unoptimized: true },
   // ~10 KB of CSS in total: inlining it removes three render-blocking
   // requests from the path to first paint (measured: mobile LCP).
   experimental: { inlineCss: true },
