@@ -49,7 +49,7 @@ test('axe: the open mobile menu, open FAQs, and a form with errors', async ({ pa
 });
 
 test('axe: sign-in and setup pages', async ({ page }) => {
-  for (const path of ['/admin/login', '/admin/setup', '/admin/invite?token=nope', '/admin/confirm-alert?token=nope']) {
+  for (const path of ['/admin/login', '/admin/setup', '/admin/invite#token=nope', '/admin/confirm-alert#token=nope']) {
     await page.goto(path);
     await axe(page, path);
   }

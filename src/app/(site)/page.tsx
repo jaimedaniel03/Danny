@@ -67,7 +67,7 @@ export default function HomePage() {
                 </li>
                 <li>
                   <Tick className={styles.checkTick} />
-                  Could you keep paying your premium in a tight month?
+                  Could you keep paying for your coverage in a tight month?
                 </li>
               </ul>
             </aside>
@@ -90,7 +90,7 @@ export default function HomePage() {
           <article className={styles.feature} aria-labelledby="life-title" data-reveal>
             <Photo
               slug="family-at-table"
-              alt="Grandparents and two young children around a kitchen table, drawing with colored pencils."
+              alt="Two adults and two young children at a kitchen table, drawing together."
               sizes="(min-width: 60rem) 50vw, 100vw"
               className={styles.featurePhoto}
             />
@@ -106,15 +106,16 @@ export default function HomePage() {
                 <li>
                   <Tick className={styles.pointTick} />
                   <span>
-                    <strong>Term life</strong> covers a set number of years and usually costs the
-                    least for the most coverage.
+                    <strong>Term life</strong> covers you for a set number of years, called the
+                    term. It usually costs the least for the most coverage.
                   </span>
                 </li>
                 <li>
                   <Tick className={styles.pointTick} />
                   <span>
-                    <strong>Permanent life</strong> can last your whole life. It costs more, and any
-                    cash value grows slowly, after fees.
+                    <strong>Permanent life</strong> is meant to last your whole life. It costs more.
+                    Any cash value (money held inside the policy) builds slowly, fees come out of
+                    it, and in some policies it can go down.
                   </span>
                 </li>
               </ul>
@@ -135,23 +136,28 @@ export default function HomePage() {
               <p className={styles.featureIndex} aria-hidden="true">02</p>
               <h3 id="health-title">Health insurance</h3>
               <p>
-                Health insurance shares the cost of medical care. You pay a premium every month,
-                then part of each bill, until your plan&rsquo;s yearly limit on what you pay is
-                reached.
+                Health insurance shares the cost of medical care. You pay a premium (the monthly
+                price) every month. When you get care, you pay part of the cost &mdash; sometimes
+                all of it until you reach your deductible (the amount you pay each year before the
+                plan starts to share costs). Comprehensive plans, including every Marketplace plan,
+                cap what you pay each year for covered care in their network. Short-term and
+                fixed-indemnity plans may not.
               </p>
               <ul role="list" className={styles.points}>
                 <li>
                   <Tick className={styles.pointTick} />
                   <span>
-                    <strong>The premium</strong> is only part of the cost. The deductible, copays and
-                    coinsurance decide what a doctor visit or hospital stay actually costs you.
+                    <strong>The premium</strong> is only part of the cost. What a doctor visit or
+                    hospital stay costs you also depends on your deductible, your copays (a set dollar
+                    amount for a visit or prescription) and your coinsurance (your percentage share of
+                    a bill after the deductible).
                   </span>
                 </li>
                 <li>
                   <Tick className={styles.pointTick} />
                   <span>
-                    <strong>The network</strong> decides which doctors and hospitals your plan pays
-                    for at the lower in-network price.
+                    <strong>The network</strong> is the group of doctors and hospitals your plan works
+                    with. Care from them, called in-network care, costs you less.
                   </span>
                 </li>
               </ul>
@@ -203,8 +209,9 @@ export default function HomePage() {
               <span className={styles.stepNumber} aria-hidden="true">3</span>
               <h3>Check in</h3>
               <p>
-                Life changes: a new baby, a new job, a move. We check in so your coverage keeps up,
-                and so a premium that has become hard to carry gets a second look before it lapses.
+                If you&rsquo;d like, we&rsquo;ll check in when life changes. If a premium gets hard
+                to pay, tell us before you miss a payment, and we&rsquo;ll look at your options with
+                you.
               </p>
             </li>
           </ol>
@@ -342,9 +349,10 @@ export default function HomePage() {
         <div className={`container ${styles.faqGrid}`}>
           <header data-reveal>
             <p className="eyebrow">Questions</p>
-            <h2 id="faq-title">Things families ask us first</h2>
+            <h2 id="faq-title">Common questions</h2>
             <p className="muted">
-              Something else on your mind? <Link href="/contact">Ask us directly</Link>.
+              Something else on your mind? <Link href="/contact">Send a coverage request</Link>, and
+              ask the person who follows up.
             </p>
           </header>
           <Faq items={HOME_FAQS} />

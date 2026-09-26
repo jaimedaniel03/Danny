@@ -57,14 +57,44 @@ describeDb('staff accounts', () => {
     for (let i = 0; i < LOCKOUT_THRESHOLD; i += 1) {
       await signIn(db(), user.email, `wrong-${i}-password-here`, ip());
     }
-    expect(await signIn(db(), user.email, PASSWORD, ip())).toEqual({ ok: false, reason: 'locked' });
+    expect(await signIn(db(), user.email, PASSWORD, ip())).toMatchObject({ ok: false, reason: 'throttled' });
+  });
+
+  it('answers the same way for real and unknown accounts through the lockout', async () => {
+    const user = await makeUser('staff');
+    const nobody = uniqueEmail('nobody');
+    const reason = async (email: string, password: string) => {
+      const r = await signIn(db(), email, password, ip());
+      return r.ok ? 'ok' : r.reason;
+    };
+    const real: string[] = [];
+    const unknown: string[] = [];
+    for (let i = 0; i <= LOCKOUT_THRESHOLD; i += 1) {
+      real.push(await reason(user.email, `wrong-${i}-password-here`));
+      unknown.push(await reason(nobody, `wrong-${i}-password-here`));
+    }
+    expect(real).toEqual([...Array<string>(LOCKOUT_THRESHOLD).fill('invalid'), 'throttled']);
+    expect(unknown).toEqual(real);
+  });
+
+  it('holds the lockout under a parallel burst of guesses', async () => {
+    const user = await makeUser('staff');
+    const burst = await Promise.all(
+      Array.from({ length: 12 }, (_, i) => signIn(db(), user.email, `burst-${i}-wrong-password`, ip())),
+    );
+    expect(burst.every((r) => !r.ok)).toBe(true);
+    // Every guess was counted; the right password is refused until the lock expires.
+    expect(await signIn(db(), user.email, PASSWORD, ip())).toMatchObject({ ok: false, reason: 'throttled' });
+    const [row] = await db()<{ locked: boolean }[]>`
+      select locked_until > now() as locked from allset.staff_users where id = ${user.id}`;
+    expect(row?.locked).toBe(true);
   });
 
   it('rate-limits sign-in attempts per connection', async () => {
     const same = ip();
     let last;
     for (let i = 0; i < 21; i += 1) last = await signIn(db(), uniqueEmail('spray'), 'nope nope nope', same);
-    expect(last).toMatchObject({ ok: false, reason: 'rate_limited' });
+    expect(last).toMatchObject({ ok: false, reason: 'throttled' });
   });
 
   it('refuses a deactivated account', async () => {

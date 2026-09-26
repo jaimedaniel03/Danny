@@ -1,6 +1,7 @@
 import 'server-only';
 import type { InquiryKind } from '@/allset/inquiries/consent';
 import { issueFormToken } from '@/allset/inquiries/form-token';
+import { inquiriesOpen } from '@/allset/inquiries/gate';
 import type { InquiryState } from '@/allset/inquiries/state';
 
 /**
@@ -14,6 +15,6 @@ export function initialInquiryState(kind: InquiryKind): InquiryState {
     idempotencyKey: crypto.randomUUID(),
     formToken: issueFormToken(kind),
     attempt: 0,
-    status: 'idle',
+    status: inquiriesOpen() ? 'idle' : 'closed',
   };
 }

@@ -1,4 +1,32 @@
-# Danny
+# Danny · All Set Check
+
+This repository holds two things that share a stack but not their data:
+
+- **All Set Check** — the public website and private lead desk for a life and
+  health insurance practice serving low- and middle-income families. Pages,
+  inquiry forms, owner/staff lead management, alerts. Start with
+  [`docs/11-ALL-SET-CHECK.md`](docs/11-ALL-SET-CHECK.md).
+- **Danny** — the compliance-gated AI voice producer described below.
+
+Website inquiries live in their own `allset` schema and never enter Danny's
+dialing pipeline.
+
+### All Set Check quickstart
+
+```bash
+npm install
+# Local Postgres: create a database, apply the migration, give the app role a password
+psql -d allset_dev -f supabase/migrations/0003_allset_site.sql
+psql -c "alter role allset_app login password 'dev-only'"
+# .env.local: DATABASE_URL, APP_SECRET (32+ chars), PUBLIC_BASE_URL, ADMIN_SETUP_TOKEN
+npm run dev                      # then open /admin/setup to create the first owner
+npm run test:db                  # unit + database tests (needs a disposable Postgres)
+TEST_DATABASE_ADMIN_URL=… scripts/e2e/run.sh   # production build + Playwright suite
+```
+
+---
+
+## Danny
 
 **An AI producer for insurance agencies.** Danny calls, qualifies, quotes, and books
 appointments across Home, Auto, Business, Health, and Life — in a cloned human voice,

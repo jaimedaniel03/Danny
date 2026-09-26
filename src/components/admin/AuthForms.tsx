@@ -6,15 +6,33 @@
  * their fields, and a summary receives focus when something needs fixing.
  */
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import type { ActionState } from '@/allset/admin/action-state';
 import {
   acceptInviteAction,
   confirmRecipientAction,
+  inviteInfoAction,
   setupAction,
   signInAction,
 } from '@/allset/admin/actions';
+
+/**
+ * One-time tokens arrive in the URL fragment (#token=…), which browsers never
+ * send to the server, so they stay out of request logs. Read it once, then
+ * strip it from the address bar and history.
+ */
+function useFragmentToken(): string | null | undefined {
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const match = window.location.hash.match(/token=([^&]+)/);
+    setToken(match ? decodeURIComponent(match[1]!) : null);
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
+  return token;
+}
 
 const IDLE: ActionState = { status: 'idle' };
 
@@ -118,6 +136,39 @@ export function SetupForm() {
   );
 }
 
+/** The invite page's body: reads the fragment token, looks the invite up, then shows the form. */
+export function InviteFromLink() {
+  const token = useFragmentToken();
+  const [invite, setInvite] = useState<{ displayName: string; email: string } | null | undefined>(undefined);
+  useEffect(() => {
+    if (token === undefined) return;
+    if (!token) {
+      setInvite(null);
+      return;
+    }
+    void inviteInfoAction(token).then(setInvite, () => setInvite(null));
+  }, [token]);
+
+  if (token === undefined || (token && invite === undefined)) {
+    return <p role="status">Checking your link…</p>;
+  }
+  if (!token || !invite) {
+    return (
+      <p>
+        This link has expired or was already used. Ask an owner for a new one, or <a href="/admin/login">sign in</a>.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p>
+        Welcome, {invite.displayName}. Choose a password for <strong>{invite.email}</strong>.
+      </p>
+      <InviteForm token={token} email={invite.email} />
+    </>
+  );
+}
+
 export function InviteForm({ token, email }: { readonly token: string; readonly email: string }) {
   const [state, action] = useActionState(acceptInviteAction, IDLE);
   const errors = state.fieldErrors ?? {};
@@ -134,9 +185,12 @@ export function InviteForm({ token, email }: { readonly token: string; readonly 
   );
 }
 
-export function ConfirmAlertForm({ token }: { readonly token: string }) {
+export function ConfirmAlertForm() {
+  const token = useFragmentToken();
   const [state, action] = useActionState(confirmRecipientAction, IDLE);
   if (state.status === 'ok') return <Problem state={state} />;
+  if (token === undefined) return <p role="status">Checking your link…</p>;
+  if (!token) return <p>This link is incomplete. Open it again from the email, or ask an owner to send a new one.</p>;
   return (
     <form action={action} className="stack">
       <Problem state={state} />

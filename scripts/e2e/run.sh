@@ -14,6 +14,8 @@ export PUBLIC_BASE_URL="http://localhost:${PORT}"
 export ADMIN_SETUP_TOKEN="e2e-only-setup-token-0123456789abcdef"
 export E2E_SETUP_TOKEN="$ADMIN_SETUP_TOKEN"
 export CRON_SECRET="e2e-only-cron-secret-0123456789"
+# The business facts are not verified yet, so forms are closed by default; open them for the run.
+export ALLOW_PRELAUNCH_INQUIRIES="true"
 # Email deliberately unconfigured: the suite proves failures are visible.
 unset RESEND_API_KEY NOTIFY_FROM RESEND_WEBHOOK_SECRET SITE_INDEXABLE
 

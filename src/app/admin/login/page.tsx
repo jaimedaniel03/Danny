@@ -20,7 +20,12 @@ export default async function LoginPage({ searchParams }: Props) {
       <div className="auth-card">
         <Mark size={44} />
         <h1 className="admin-title">Sign in to the lead desk</h1>
-        {params.signed_out ? (
+        {params.signed_out === 'partial' ? (
+          <p role="alert" className="notice notice--error">
+            You’re signed out on this device, but we couldn’t end the session on our server. Sign in
+            and choose “Sign out other devices”, or tell an owner.
+          </p>
+        ) : params.signed_out ? (
           <p role="status" className="notice notice--success">
             You’re signed out.
           </p>

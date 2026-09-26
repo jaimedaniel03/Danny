@@ -111,6 +111,39 @@ test('security headers are set on public pages', async ({ request }) => {
   expect(headers['x-powered-by']).toBeUndefined();
 });
 
+test('pages that collect personal data run only the scripts each response authorizes', async ({ page }) => {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) violations.push(message.text());
+  });
+  const nonces = new Set<string>();
+  for (const path of ['/contact', '/team', '/contact', '/admin/login', '/admin/invite']) {
+    const response = await page.goto(path);
+    const csp = response?.headers()['content-security-policy'] ?? '';
+    expect(csp, path).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
+    expect(csp, path).toContain("frame-ancestors 'none'");
+    const nonce = /'nonce-([^']+)'/.exec(csp)![1]!;
+    nonces.add(nonce);
+    // Every script tag the server sent carries this response's nonce. (Chunks those scripts
+    // load later are trusted through 'strict-dynamic' and need none.)
+    const html = (await response?.text()) ?? '';
+    const tags = html.match(/<script\b[^>]*>/g) ?? [];
+    expect(tags.length, path).toBeGreaterThan(0);
+    const unsigned = tags.filter((tag) => !tag.includes(`nonce="${nonce}"`) && !/type="application\/ld\+json"/.test(tag));
+    expect(unsigned, path).toEqual([]);
+  }
+  // A fresh nonce every time; a reused one would be no protection.
+  expect(nonces.size).toBe(5);
+  expect(violations).toEqual([]);
+});
+
+test('every public page says plainly that the site is a preview until launch', async ({ page }) => {
+  for (const route of PUBLIC_ROUTES) {
+    await page.goto(route);
+    await expect(page.getByRole('complementary', { name: 'Site status' }), route).toContainText('not open to the public yet');
+  }
+});
+
 async function layoutProblems(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const problems: string[] = [];

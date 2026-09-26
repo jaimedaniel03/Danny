@@ -8,7 +8,8 @@
  *     re-renders with the result — errors, preserved values, or the reference.
  *   - With JavaScript, submission happens in place. A network failure keeps
  *     every value, keeps the same idempotency key (so a retry can't create a
- *     duplicate), and says plainly that nothing was sent.
+ *     duplicate), and says plainly that it couldn't confirm the request
+ *     arrived.
  *
  * Validation lives on the server. The browser's own popups are turned off
  * (noValidate) so every message is the same plain-language one, placed next
@@ -32,6 +33,7 @@ import {
   type InquiryValues,
 } from '@/allset/inquiries/fields';
 import type { InquiryState } from '@/allset/inquiries/state';
+import type { Acknowledgment } from '@/allset/inquiries/consent';
 import styles from './InquiryForm.module.css';
 
 type Action = (previous: InquiryState, form: FormData) => Promise<InquiryState>;
@@ -40,7 +42,7 @@ interface InquiryFormProps {
   readonly action: Action;
   readonly initialState: InquiryState;
   readonly consentText: string;
-  readonly disclosureAckText?: string | undefined;
+  readonly disclosureAckText?: Acknowledgment | undefined;
   readonly successNextSteps: readonly string[];
 }
 
@@ -90,6 +92,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
   const summaryRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLHeadingElement>(null);
   const kind = state.kind;
+  const noun = kind === 'coverage' ? 'request' : 'inquiry';
 
   const values: InquiryValues = state.status === 'invalid' || state.status === 'error' ? state.values : EMPTY_VALUES;
   const errors: FieldErrors = state.status === 'invalid' ? state.errors : {};
@@ -118,8 +121,9 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
           formToken: previous.formToken,
           attempt: previous.attempt + 1,
           status: 'error',
-          message:
-            "We couldn't reach our server, so nothing was sent. Check your connection and try again — your details are still here.",
+          // The response was lost, so it's unknown whether the request arrived. The same
+          // idempotency key rides on the retry, so trying again can't create a duplicate.
+          message: `We couldn't confirm that your ${previous.kind === 'coverage' ? 'request' : 'inquiry'} reached us. Check your connection and try again. Your details are still here, and trying again won't send it twice.`,
           values: valuesFromForm(data),
         });
       }
@@ -136,11 +140,29 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
     });
   }
 
+  if (state.status === 'closed') {
+    return (
+      <div className="notice notice--warning" role="status">
+        <p className="notice__title">
+          {kind === 'coverage' ? 'We’re not taking requests through this site yet.' : 'We’re not taking team inquiries through this site yet.'}
+        </p>
+        {kind === 'coverage' ? (
+          <p>
+            If you need coverage now, these free official sites can help:{' '}
+            <a href="https://www.healthcare.gov/" rel="noopener noreferrer">HealthCare.gov</a>,{' '}
+            <a href="https://www.medicaid.gov/" rel="noopener noreferrer">Medicaid.gov</a> and{' '}
+            <a href="https://www.medicare.gov/" rel="noopener noreferrer">Medicare.gov</a>.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   if (state.status === 'success') {
     return (
       <div className={styles.success} role="status">
         <h2 ref={successRef} tabIndex={-1} className={styles.successTitle}>
-          Thank you. We have your request.
+          Thank you. We have your {noun}.
         </h2>
         <p>
           Your reference is <strong className={styles.reference}>{state.reference}</strong>. Keep it
@@ -153,10 +175,10 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
         </ul>
         <p className="fine-print">
           We&rsquo;ll reach you by {CONTACT_METHOD_LABELS[state.contactMethod].toLowerCase()}. Changed your mind?
-          Tell us any time and we&rsquo;ll stop contacting you.
+          Reply STOP to a text, reply to an email, or tell the person who calls you, and we&rsquo;ll stop.
         </p>
         <button type="button" className="btn btn--secondary" onClick={startOver}>
-          Send another request
+          Send another {noun}
         </button>
       </div>
     );
@@ -180,7 +202,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
               ? errorList.length === 1
                 ? 'There is 1 thing to fix'
                 : `There are ${errorList.length} things to fix`
-              : 'Your request was not sent'}
+              : `We couldn’t finish sending your ${noun}`}
           </h2>
           {state.status === 'invalid' ? (
             <ul className={styles.summaryList}>
@@ -197,7 +219,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
       ) : null}
 
       <p id="inquiry-required-note" className="fine-print">
-        Every question is required unless it says optional.
+        Every question is required unless it says otherwise.
       </p>
 
       <input type="hidden" name="idempotencyKey" value={state.idempotencyKey} />
@@ -237,7 +259,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
           Email address
         </label>
         <p className="field__hint" id="inquiry-email-hint">
-          We use it to confirm we received your request.
+          We use it to match your {noun} if you send this form again. We contact you only the way you choose below.
         </p>
         {errors.email ? (
           <p className="field__error" id="inquiry-email-error">
@@ -408,7 +430,16 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
               aria-invalid={errors.disclosureAck ? true : undefined}
               aria-describedby={errors.disclosureAck ? 'inquiry-disclosure-error' : undefined}
             />
-            <span>{disclosureAckText}</span>
+            <span>
+              {disclosureAckText.lead}
+              <span className={styles.ackPoints}>
+                {disclosureAckText.points.map((point) => (
+                  <span key={point} className={styles.ackPoint}>
+                    {point}
+                  </span>
+                ))}
+              </span>
+            </span>
           </label>
         </div>
       ) : null}
@@ -443,7 +474,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
           {pending ? 'Sending…' : kind === 'coverage' ? 'Send my request' : 'Send my team inquiry'}
         </button>
         <p className={styles.live} aria-live="polite">
-          {pending ? 'Sending your request…' : ''}
+          {pending ? `Sending your ${noun}…` : ''}
         </p>
       </div>
     </form>

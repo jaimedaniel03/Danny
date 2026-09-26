@@ -3,8 +3,8 @@
  *
  *  - A per-request nonce Content-Security-Policy with 'strict-dynamic', so
  *    only scripts this response itself authorized can run where personal
- *    data is displayed. (Public pages are static and use a baseline policy
- *    from next.config.mjs instead.)
+ *    data is displayed or collected (the lead desk, /contact and /team).
+ *    Static public pages use a baseline policy from next.config.mjs.
  *  - No caching, no indexing.
  *  - A fast redirect to sign-in when there is no session cookie at all. This
  *    is a convenience; every page and action still verifies the session.
@@ -31,6 +31,7 @@ export function middleware(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
   const nonce = btoa(crypto.randomUUID());
   const dev = process.env.NODE_ENV !== 'production';
+  const isAdmin = pathname === '/admin' || pathname.startsWith('/admin/');
 
   const csp = [
     "default-src 'self'",
@@ -44,6 +45,18 @@ export function middleware(request: NextRequest): NextResponse {
     "form-action 'self'",
     "object-src 'none'",
   ].join('; ');
+
+  // The public pages that collect personal data (/contact, /team) are
+  // rendered per request, so they get the same nonce policy; everything
+  // else about them stays public (indexable, cacheable per their own headers).
+  if (!isAdmin) {
+    const headers = new Headers(request.headers);
+    headers.set('Content-Security-Policy', csp);
+    headers.set('x-nonce', nonce);
+    const res = NextResponse.next({ request: { headers } });
+    res.headers.set('Content-Security-Policy', csp);
+    return res;
+  }
 
   const hasSession =
     request.cookies.has('__Host-asc_session') || request.cookies.has('asc_session');
@@ -69,5 +82,5 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/admin'],
+  matcher: ['/admin/:path*', '/admin', '/contact', '/team'],
 };

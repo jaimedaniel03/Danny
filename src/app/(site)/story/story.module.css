@@ -314,22 +314,6 @@
   color: var(--white);
 }
 
-.inkLink {
-  gap: var(--space-2);
-  font-weight: 650;
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.3em;
-}
-
-.inkLink svg {
-  transition: transform var(--dur) var(--ease);
-}
-
-.inkLink:hover svg {
-  transform: translateX(3px);
-}
-
 @media (min-width: 60rem) {
   .freedom {
     grid-template-columns: 1fr 1.15fr;

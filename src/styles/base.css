@@ -76,7 +76,6 @@ h4 {
   letter-spacing: -0.012em;
   margin: 0;
   text-wrap: balance;
-  font-optical-sizing: auto;
 }
 
 h1 {
@@ -246,6 +245,22 @@ a:hover {
 .skip-link:focus {
   top: var(--space-4);
   color: var(--paper);
+}
+
+/* ── Pre-launch notice ─────────────────────────────────────────────────── */
+
+.preview-bar {
+  background: var(--ink-2);
+  color: var(--paper);
+  font-size: var(--step-sm);
+  line-height: var(--leading-snug);
+  padding: var(--space-2) var(--space-4);
+  text-align: center;
+}
+
+.preview-bar p {
+  margin: 0 auto;
+  max-width: var(--measure);
 }
 
 /* ── Focus ─────────────────────────────────────────────────────────────── */

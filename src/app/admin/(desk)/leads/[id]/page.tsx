@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { requireActor } from '@/allset/auth/session-cookie';
 import { can } from '@/allset/auth/roles';
 import { db } from '@/allset/db/client';
+import { RETENTION } from '@/allset/retention';
 import { listAssignable } from '@/allset/auth/accounts';
 import { getLead, LEAD_STATUSES, NOTE_MAX, STATUS_LABELS } from '@/allset/leads/repo';
 import {
@@ -17,21 +18,53 @@ import { formatPhone } from '@/allset/content/format';
 import { ActionForm, Submit } from '@/components/admin/ActionForm';
 import { actionLabel, detailLine, formatDate, formatDateTime, statusLabel, statusTagClass } from '@/components/admin/format';
 import {
+  applyDetailsAction,
   assignAction,
   deleteLeadAction,
   followUpAction,
+  markReviewedAction,
   noteAction,
   updateStatusAction,
 } from '@/allset/admin/actions';
+
+function payloadLine(payload: Record<string, unknown>): string {
+  const get = (k: string): string | null => {
+    const value = payload[k];
+    return typeof value === 'string' ? value : null;
+  };
+  const method = get('contactMethod');
+  const interest = get('coverageInterest');
+  const licensing = get('licensingStatus');
+  const phone = get('phone');
+  return [
+    get('fullName'),
+    get('email'),
+    phone ? formatPhone(phone) : null,
+    get('zip') ? `ZIP ${get('zip')}` : null,
+    method && method in CONTACT_METHOD_LABELS ? `prefers ${CONTACT_METHOD_LABELS[method as keyof typeof CONTACT_METHOD_LABELS].toLowerCase()}` : null,
+    interest ? COVERAGE_INTEREST_LABELS[interest as CoverageInterest] : null,
+    licensing ? LICENSING_STATUS_LABELS[licensing as LicensingStatus] : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 export const metadata: Metadata = { title: 'Lead' };
 
 interface Props {
   readonly params: Promise<{ id: string }>;
+  readonly searchParams: Promise<{ reviewed?: string | string[] }>;
 }
 
-export default async function LeadPage({ params }: Props) {
+const REVIEWED: Record<string, string> = {
+  updated: 'Contact details updated from that request.',
+  kept: 'Kept the current details.',
+};
+
+export default async function LeadPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const { reviewed } = await searchParams;
+  const reviewedMessage = typeof reviewed === 'string' ? REVIEWED[reviewed] : undefined;
   const actor = await requireActor(`/admin/leads/${id}`);
   const sql = db();
   const detail = await getLead(sql, actor, id);
@@ -65,6 +98,38 @@ export default async function LeadPage({ params }: Props) {
           </span>
         </p>
       </header>
+
+      {reviewedMessage ? (
+        <p className="notice notice--success" role="status">
+          {reviewedMessage}
+        </p>
+      ) : null}
+
+      {lead.suppressionMatch && lead.status !== 'do_not_contact' ? (
+        <div className="notice notice--error" role="note">
+          <p className="notice__title">This email or phone number asked us not to make contact before.</p>
+          <p>
+            Someone may have used another person’s details. Before reaching out, confirm this request
+            really came from them — for example by replying only to the email address on the request.
+          </p>
+        </div>
+      ) : null}
+
+      {lead.needsReview ? (
+        <div className="notice notice--warning" role="note">
+          <p className="notice__title">A later request has different details.</p>
+          <p>
+            The lead still uses its original contact details. Compare the requests below and confirm with
+            the person before switching to the newer ones.
+          </p>
+          {canEdit ? (
+            <ActionForm action={markReviewedAction} aria-label="Keep current details">
+              <input type="hidden" name="leadId" value={lead.id} />
+              <Submit variant="secondary">Keep the current details</Submit>
+            </ActionForm>
+          ) : null}
+        </div>
+      ) : null}
 
       {lead.status === 'do_not_contact' ? (
         <p className="notice notice--error" role="note">
@@ -154,6 +219,14 @@ export default async function LeadPage({ params }: Props) {
                       · {formatDateTime(inquiry.createdAt)} · from {inquiry.sourcePath}
                     </span>
                   </p>
+                  <p className="fine-print">{payloadLine(inquiry.payload)}</p>
+                  {lead.needsReview && canEdit ? (
+                    <ActionForm action={applyDetailsAction} aria-label={`Use details from ${inquiry.reference}`}>
+                      <input type="hidden" name="leadId" value={lead.id} />
+                      <input type="hidden" name="inquiryId" value={inquiry.id} />
+                      <Submit variant="quiet">Use these details</Submit>
+                    </ActionForm>
+                  ) : null}
                   <div className="consent-record">
                     <p>
                       Agreed {formatDateTime(inquiry.consentedAt)} to wording version{' '}
@@ -286,6 +359,19 @@ export default async function LeadPage({ params }: Props) {
                   </label>
                   <input id="confirmation" name="confirmation" className="input" autoComplete="off" required />
                 </div>
+                <label className="choice choice--plain">
+                  <input
+                    type="checkbox"
+                    name="suppress"
+                    value="yes"
+                    defaultChecked={lead.status === 'do_not_contact'}
+                  />
+                  <span>
+                    They also asked us not to contact them. Keep a one-way code of their email and phone for{' '}
+                    {RETENTION.suppressionYears} years so a future request in their name is flagged. Leave
+                    this unchecked if they only asked to be deleted.
+                  </span>
+                </label>
                 <Submit variant="danger" pendingLabel="Deleting…">
                   Delete this lead
                 </Submit>

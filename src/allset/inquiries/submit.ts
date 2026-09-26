@@ -18,7 +18,8 @@ import { newReference } from '@/allset/crypto';
 import { hit, LIMITS } from '@/allset/ratelimit';
 import { recordAudit } from '@/allset/audit';
 import { enqueueLeadAlerts } from '@/allset/notifications/outbox';
-import { consentWording } from './consent';
+import { isSuppressed } from '@/allset/suppression';
+import { acknowledgmentText, consentWording, TEAM_DISCLOSURE_ACK } from './consent';
 import type { ValidInquiry } from './fields';
 
 export interface SubmitContext {
@@ -75,31 +76,45 @@ export async function submitInquiry(
     phone: inquiry.phoneE164,
     coverageInterest: inquiry.coverageInterest,
     licensingStatus: inquiry.licensingStatus,
-    disclosureAcknowledged: inquiry.kind === 'team' ? inquiry.disclosureAck : undefined,
+    ...(inquiry.kind === 'team'
+      ? {
+          disclosureAcknowledged: inquiry.disclosureAck,
+          disclosureText: acknowledgmentText(),
+          disclosureVersion: TEAM_DISCLOSURE_ACK.version,
+          disclosureTermsShown: TEAM_DISCLOSURE_ACK.termsShown,
+        }
+      : {}),
   };
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const reference = newReference();
     try {
       return await sql.begin(async (tx) => {
+        const suppressed = await isSuppressed(tx, inquiry);
+        // A repeat submission never rewrites the lead's contact details:
+        // anyone who knows a person's email could otherwise redirect our
+        // calls to a number of their choosing. New details are kept on the
+        // inquiry, and the lead is flagged for a person to compare.
         const [lead] = await tx<{ id: string; inserted: boolean }[]>`
           insert into allset.leads (
             kind, full_name, email, email_normalized, zip, contact_method, phone_e164,
-            coverage_interest, licensing_status
+            coverage_interest, licensing_status, suppression_match
           ) values (
             ${inquiry.kind}, ${inquiry.fullName}, ${inquiry.email}, ${inquiry.emailNormalized}, ${inquiry.zip},
-            ${inquiry.contactMethod}, ${inquiry.phoneE164}, ${inquiry.coverageInterest}, ${inquiry.licensingStatus}
+            ${inquiry.contactMethod}, ${inquiry.phoneE164}, ${inquiry.coverageInterest}, ${inquiry.licensingStatus},
+            ${suppressed}
           )
           on conflict (kind, email_normalized) where closed_at is null
           do update set
-            full_name = excluded.full_name,
-            email = excluded.email,
-            zip = excluded.zip,
-            contact_method = excluded.contact_method,
-            phone_e164 = excluded.phone_e164,
-            coverage_interest = excluded.coverage_interest,
-            licensing_status = excluded.licensing_status,
             submission_count = allset.leads.submission_count + 1,
+            needs_review = allset.leads.needs_review or (
+              (allset.leads.full_name, allset.leads.zip, allset.leads.contact_method, allset.leads.phone_e164,
+               allset.leads.coverage_interest, allset.leads.licensing_status)
+              is distinct from
+              (excluded.full_name, excluded.zip, excluded.contact_method, excluded.phone_e164,
+               excluded.coverage_interest, excluded.licensing_status)
+            ),
+            suppression_match = allset.leads.suppression_match or excluded.suppression_match,
             last_submitted_at = now(),
             last_activity_at = now(),
             updated_at = now()
@@ -127,7 +142,7 @@ export async function submitInquiry(
           entityType: 'lead',
           entityId: lead.id,
           entityRef: reference,
-          details: { kind: inquiry.kind, alerts_queued: alerts, consent_version: consent.version },
+          details: { kind: inquiry.kind, alerts_queued: alerts, consent_version: consent.version, suppression_match: suppressed },
         });
 
         return { kind: 'accepted' as const, reference, leadId: lead.id, replay: false, merged: !lead.inserted };

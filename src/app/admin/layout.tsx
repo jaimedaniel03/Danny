@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { connection } from 'next/server';
 import '@/styles/admin.css';
 
 export const metadata: Metadata = {
@@ -7,6 +8,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
-export default function AdminRootLayout({ children }: { children: ReactNode }) {
+/**
+ * Every admin page is rendered per request. The middleware's CSP allows only
+ * scripts carrying that request's nonce, and a prerendered page has none, so
+ * a static admin page would load with its scripts blocked.
+ */
+export default async function AdminRootLayout({ children }: { children: ReactNode }) {
+  await connection();
   return <div className="admin">{children}</div>;
 }

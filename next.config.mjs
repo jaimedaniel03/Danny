@@ -35,11 +35,18 @@ const securityHeaders = [
 export default {
   reactStrictMode: true,
   poweredByHeader: false,
+  // ~10 KB of CSS in total: inlining it removes three render-blocking
+  // requests from the path to first paint (measured: mobile LCP).
+  experimental: { inlineCss: true },
+  // Always put metadata in <head>, for every client. Our metadata is static,
+  // so streaming it later buys nothing and hides it from some tools.
+  htmlLimitedBots: /.*/,
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },
-      // Everything except the lead desk, which sets its own nonce policy.
-      { source: '/((?!admin).*)', headers: [{ key: 'Content-Security-Policy', value: publicCsp }] },
+      // Everything except the pages that set a per-request nonce policy in
+      // middleware: the lead desk and the two form pages.
+      { source: '/((?!admin|contact|team).*)', headers: [{ key: 'Content-Security-Policy', value: publicCsp }] },
       // Consent pages carry signed tokens tied to a person's phone number.
       // Belt and braces alongside the robots metadata on the page.
       {

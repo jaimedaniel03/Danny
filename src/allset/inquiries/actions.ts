@@ -17,6 +17,7 @@ import { readValues, validateInquiry } from './fields';
 import { checkFormToken, issueFormToken } from './form-token';
 import type { InquiryState } from './state';
 import { isIdempotencyKey, submitInquiry } from './submit';
+import { inquiriesOpen } from './gate';
 
 const SOURCE_PATH: Record<InquiryKind, string> = { coverage: '/contact', team: '/team' };
 
@@ -31,6 +32,13 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
   const idempotencyKey = isIdempotencyKey(submittedKey) ? submittedKey : crypto.randomUUID();
   const attempt = (previous?.attempt ?? 0) + 1;
   const base = { kind, idempotencyKey, attempt };
+  const noun = kind === 'coverage' ? 'request' : 'inquiry';
+
+  // Closed before launch unless deliberately opened for a private preview.
+  // Checked here, not only by hiding the form.
+  if (!inquiriesOpen()) {
+    return { ...base, formToken: issueFormToken(kind), status: 'closed' };
+  }
 
   // Honeypot: a field people never see. Answer exactly as for a real success,
   // so an automated sender learns nothing; save nothing.
@@ -45,6 +53,18 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
   // field and resubmits quickly is not a bot. Only a bad or stale token is
   // replaced.
   const formToken = token === 'ok' || token === 'too_fast' ? submittedToken : issueFormToken(kind);
+  if (token === 'wording_changed') {
+    log.info('inquiry.form_token_rejected', { kind, verdict: token });
+    return {
+      ...base,
+      formToken,
+      status: 'error',
+      message:
+        'The agreement wording on this form was updated after you opened it. Please read it again and check the box to send your ' +
+        `${noun}. Your details are still here.`,
+      values: { ...values, consent: false, disclosureAck: false },
+    };
+  }
   if (token !== 'ok') {
     log.info('inquiry.form_token_rejected', { kind, verdict: token });
     return {
@@ -79,7 +99,7 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
         ...base,
         formToken,
         status: 'error',
-        message: `We've received several requests from this connection recently. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}. Your details are still here.`,
+        message: `We've received several ${noun === 'request' ? 'requests' : 'inquiries'} recently from this connection or email address. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}. Your details are still here.`,
         values,
       };
     }
@@ -110,7 +130,7 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
       formToken,
       status: 'error',
       message:
-        "We couldn't save your request just now, and nothing was sent. Your details are still here — please try again in a moment.",
+        `We couldn't save your ${noun} just now. Your details are still here — please try again in a moment. Trying again won't send it twice.`,
       values,
     };
   }

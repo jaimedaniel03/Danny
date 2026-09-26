@@ -6,11 +6,13 @@
  * cannot drift apart. Changing a number here changes both.
  *
  * Why these numbers (for the owner and counsel to confirm):
- *  - Inquiries and their consent evidence: 36 months after the last activity
- *    on the lead. Long enough to answer a question about whether someone
- *    agreed to be contacted (claims under the federal telephone consumer
- *    protection law can be brought for four years from the call), short
- *    enough not to hoard contact details of people who never became clients.
+ *  - Inquiries and their consent evidence: 60 months after the last activity
+ *    on the lead. Claims under the federal telephone consumer protection law
+ *    can be brought for four years from a call, so the proof that someone
+ *    asked to be contacted has to outlast that, with margin.
+ *  - Do-not-contact hashes: 5 years from the request (the FCC's
+ *    do-not-call honoring period), regardless of what happens to the lead.
+ *  - Deactivated staff accounts: anonymized 3 years after deactivation.
  *  - Audit trail: 3 years (the database refuses earlier deletion).
  *  - Alert delivery records: 12 months.
  *  - Sign-in sessions: deleted once expired. Rate-limit counters: 2 days.
@@ -21,10 +23,12 @@ import type { Sql } from '@/allset/db/client';
 import { recordAudit } from '@/allset/audit';
 
 export const RETENTION = {
-  leadMonthsAfterLastActivity: 36,
+  leadMonthsAfterLastActivity: 60,
+  suppressionYears: 5,
   auditYears: 3,
   notificationMonths: 12,
   rateLimitDays: 2,
+  deactivatedStaffYears: 3,
 } as const;
 
 export interface RetentionReport {
@@ -34,6 +38,8 @@ export interface RetentionReport {
   readonly sessionsDeleted: number;
   readonly rateLimitRowsDeleted: number;
   readonly invitesExpired: number;
+  readonly suppressionsExpired: number;
+  readonly staffAnonymized: number;
 }
 
 export async function runRetention(sql: Sql): Promise<RetentionReport> {
@@ -60,6 +66,21 @@ export async function runRetention(sql: Sql): Promise<RetentionReport> {
     where invite_expires_at < now()
     returning id`;
 
+  const suppressions = await sql`
+    delete from allset.contact_suppressions
+    where created_at < now() - make_interval(years => ${RETENTION.suppressionYears})
+    returning 1`;
+  // Anonymize rather than delete: audit rows and notes must keep pointing at
+  // an account, and they are immutable.
+  const staff = await sql`
+    update allset.staff_users
+    set email = 'removed-' || id::text || '@invalid.example', display_name = 'Former team member',
+        password_hash = null, invite_token_hash = null, invite_expires_at = null, updated_at = now()
+    where not is_active
+      and deactivated_at < now() - make_interval(years => ${RETENTION.deactivatedStaffYears})
+      and email not like 'removed-%@invalid.example'
+    returning id`;
+
   const report: RetentionReport = {
     leadsDeleted: leads.length,
     notificationsDeleted: notifications.length,
@@ -67,6 +88,8 @@ export async function runRetention(sql: Sql): Promise<RetentionReport> {
     sessionsDeleted: sessions.length,
     rateLimitRowsDeleted: limits.length,
     invitesExpired: invites.length,
+    suppressionsExpired: suppressions.length,
+    staffAnonymized: staff.length,
   };
   await recordAudit(sql, {
     actor: null,
@@ -76,6 +99,8 @@ export async function runRetention(sql: Sql): Promise<RetentionReport> {
       notifications_deleted: report.notificationsDeleted,
       audit_events_deleted: report.auditEventsDeleted,
       sessions_deleted: report.sessionsDeleted,
+      suppressions_expired: report.suppressionsExpired,
+      staff_anonymized: report.staffAnonymized,
     },
   });
   return report;

@@ -10,6 +10,8 @@ import type { Sql, TransactionSql } from '@/allset/db/client';
 import { recordAudit, type AuditActor } from '@/allset/audit';
 import { businessTimeZone } from '@/allset/env';
 import { canAssign, canEditLead, canViewLead, can, PermissionError, type Actor } from '@/allset/auth/roles';
+import { suppress } from '@/allset/suppression';
+import { CONTACT_METHODS, COVERAGE_INTERESTS, LICENSING_STATUSES, normalizeUsPhone, normalizeZip } from '@/allset/inquiries/fields';
 
 export const LEAD_STATUSES = [
   'new',
@@ -85,6 +87,8 @@ export interface LeadRow {
   readonly createdAt: Date;
   readonly lastActivityAt: Date;
   readonly latestReference: string | null;
+  readonly needsReview: boolean;
+  readonly suppressionMatch: boolean;
 }
 
 function likePattern(q: string): string {
@@ -152,7 +156,8 @@ export async function listLeads(
            l.licensing_status as "licensingStatus", l.status, l.assigned_to as "assignedTo",
            u.display_name as "assignedName", l.follow_up_on as "followUpOn",
            l.submission_count as "submissionCount", l.created_at as "createdAt",
-           l.last_activity_at as "lastActivityAt",
+           l.last_activity_at as "lastActivityAt", l.needs_review as "needsReview",
+           l.suppression_match as "suppressionMatch",
            (select i.reference from allset.inquiries i where i.lead_id = l.id order by i.created_at desc limit 1) as "latestReference"
     from allset.leads l
     left join allset.staff_users u on u.id = l.assigned_to
@@ -225,7 +230,8 @@ export async function getLead(sql: Sql, actor: Actor, id: string): Promise<LeadD
            l.licensing_status as "licensingStatus", l.status, l.assigned_to as "assignedTo",
            u.display_name as "assignedName", l.follow_up_on as "followUpOn",
            l.submission_count as "submissionCount", l.created_at as "createdAt",
-           l.last_activity_at as "lastActivityAt", l.closed_at as "closedAt",
+           l.last_activity_at as "lastActivityAt", l.needs_review as "needsReview",
+           l.suppression_match as "suppressionMatch", l.closed_at as "closedAt",
            (select i.reference from allset.inquiries i where i.lead_id = l.id order by i.created_at desc limit 1) as "latestReference"
     from allset.leads l
     left join allset.staff_users u on u.id = l.assigned_to
@@ -284,12 +290,82 @@ export async function updateStatus(sql: Sql, actor: Actor, id: string, status: s
       }
       throw error;
     }
+    if (status === 'do_not_contact') {
+      const [contact] = await tx<{ email_normalized: string; phone_e164: string | null }[]>`
+        select email_normalized, phone_e164 from allset.leads where id = ${id}`;
+      if (contact) await suppress(tx, { emailNormalized: contact.email_normalized, phoneE164: contact.phone_e164 }, actor.id);
+    }
     await recordAudit(tx, {
       actor: auditActor(actor),
       action: 'lead.status_changed',
       entityType: 'lead',
       entityId: id,
       details: { from: lead.status, to: status },
+    });
+  });
+}
+
+/** Staff compared the details and kept the lead's current ones. */
+export async function markReviewed(sql: Sql, actor: Actor, id: string): Promise<void> {
+  await sql.begin(async (tx) => {
+    const lead = await visibleLead(tx, actor, id, true);
+    if (!lead) throw new LeadNotFound();
+    if (!canEditLead(actor, { assignedTo: lead.assigned_to })) {
+      throw new PermissionError('Assign this lead to yourself before changing it.');
+    }
+    await tx`update allset.leads set needs_review = false, updated_at = now() where id = ${id}`;
+    await recordAudit(tx, { actor: auditActor(actor), action: 'lead.details_kept', entityType: 'lead', entityId: id });
+  });
+}
+
+/**
+ * Staff confirmed with the person that a later submission's details are
+ * right, and adopt them. Only details from this lead's own inquiries can be
+ * applied, and they are re-validated.
+ */
+export async function applyInquiryDetails(sql: Sql, actor: Actor, id: string, inquiryId: string): Promise<void> {
+  if (!UUID.test(inquiryId)) throw new PermissionError('Unknown request.');
+  await sql.begin(async (tx) => {
+    const lead = await visibleLead(tx, actor, id, true);
+    if (!lead) throw new LeadNotFound();
+    if (!canEditLead(actor, { assignedTo: lead.assigned_to })) {
+      throw new PermissionError('Assign this lead to yourself before changing it.');
+    }
+    const [inquiry] = await tx<{ reference: string; payload: Record<string, unknown> }[]>`
+      select reference, payload from allset.inquiries where id = ${inquiryId} and lead_id = ${id}`;
+    if (!inquiry) throw new PermissionError('That request isn’t part of this lead.');
+    const p = inquiry.payload;
+    const str = (key: string): string | null => {
+      const value = p[key];
+      return typeof value === 'string' ? value : null;
+    };
+    const method = str('contactMethod');
+    const zip = normalizeZip(str('zip') ?? '');
+    const phone = str('phone') ? normalizeUsPhone(str('phone')!) : null;
+    const name = str('fullName');
+    if (!name || !zip || !method || !(CONTACT_METHODS as readonly string[]).includes(method) || (method !== 'email' && !phone)) {
+      throw new PermissionError('Those details are incomplete, so they can’t be applied.');
+    }
+    const interest = str('coverageInterest');
+    const licensing = str('licensingStatus');
+    await tx`
+      update allset.leads set
+        full_name = ${name.slice(0, 100)},
+        zip = ${zip},
+        contact_method = ${method},
+        phone_e164 = ${phone},
+        coverage_interest = ${lead.kind === 'coverage' && interest && (COVERAGE_INTERESTS as readonly string[]).includes(interest) ? interest : sql`coverage_interest`},
+        licensing_status = ${lead.kind === 'team' && licensing && (LICENSING_STATUSES as readonly string[]).includes(licensing) ? licensing : sql`licensing_status`},
+        needs_review = false,
+        last_activity_at = now(),
+        updated_at = now()
+      where id = ${id}`;
+    await recordAudit(tx, {
+      actor: auditActor(actor),
+      action: 'lead.details_updated',
+      entityType: 'lead',
+      entityId: id,
+      entityRef: inquiry.reference,
     });
   });
 }
@@ -387,7 +463,13 @@ export async function addNote(sql: Sql, actor: Actor, id: string, body: string):
  * The owner must type one of the lead's references to confirm. The audit
  * trail keeps that a deletion happened and by whom, not who was deleted.
  */
-export async function deleteLead(sql: Sql, actor: Actor, id: string, confirmation: string): Promise<{ reference: string }> {
+export async function deleteLead(
+  sql: Sql,
+  actor: Actor,
+  id: string,
+  confirmation: string,
+  options: { readonly suppress?: boolean } = {},
+): Promise<{ reference: string }> {
   if (!can(actor, 'lead.delete')) throw new PermissionError('Only an owner can delete a lead.');
   return sql.begin(async (tx) => {
     const lead = await visibleLead(tx, actor, id, true);
@@ -397,6 +479,11 @@ export async function deleteLead(sql: Sql, actor: Actor, id: string, confirmatio
     const typed = confirmation.trim().toUpperCase();
     const match = refs.find((r) => r.reference === typed);
     if (!match) throw new PermissionError('Type one of this lead’s reference numbers exactly to confirm.');
+    if (options.suppress) {
+      const [contact] = await tx<{ email_normalized: string; phone_e164: string | null }[]>`
+        select email_normalized, phone_e164 from allset.leads where id = ${id}`;
+      if (contact) await suppress(tx, { emailNormalized: contact.email_normalized, phoneE164: contact.phone_e164 }, actor.id);
+    }
     await tx`delete from allset.leads where id = ${id}`;
     await recordAudit(tx, {
       actor: auditActor(actor),
@@ -404,7 +491,7 @@ export async function deleteLead(sql: Sql, actor: Actor, id: string, confirmatio
       entityType: 'lead',
       entityId: id,
       entityRef: match.reference,
-      details: { kind: lead.kind, inquiries_deleted: refs.length },
+      details: { kind: lead.kind, inquiries_deleted: refs.length, added_to_do_not_contact: Boolean(options.suppress) },
     });
     return { reference: match.reference };
   });

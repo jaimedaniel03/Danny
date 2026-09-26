@@ -21,35 +21,43 @@ interface Section {
   readonly body: ReactNode;
 }
 
-/** How to reach us: verified channels only, else the contact form. */
+/** How to reach us: verified channels only, else reply to our team. */
 function ContactChannels() {
   const { email, mailingAddress } = FACTS.contact;
   const hasVerified = email !== null || mailingAddress !== null;
   return (
     <div className={styles.callout}>
       {hasVerified ? (
-        <ul role="list" className={styles.channels}>
-          {email ? (
-            <li>
-              Email:{' '}
-              <a className="target" href={`mailto:${email.value}`}>
-                {email.value}
-              </a>
-            </li>
-          ) : null}
-          {mailingAddress ? <li>Mail: {mailingAddress.value}</li> : null}
-        </ul>
-      ) : null}
-      <p>
-        {hasVerified ? 'You can also use the contact form on this site. ' : 'Right now, the way to reach us is the contact form on this site. '}
-        It has no message box, so when a person on our team follows up, tell them what your
-        question is about.
-      </p>
-      <p>
-        <Link href="/contact" className="btn btn--secondary">
-          Go to the contact form
-        </Link>
-      </p>
+        <>
+          <ul role="list" className={styles.channels}>
+            {email ? (
+              <li>
+                Email:{' '}
+                <a className="target" href={`mailto:${email.value}`}>
+                  {email.value}
+                </a>
+              </li>
+            ) : null}
+            {mailingAddress ? <li>Mail: {mailingAddress.value}</li> : null}
+          </ul>
+          <p>
+            You can also use the contact form on this site. It has no message box, so when a person
+            on our team follows up, tell them what your question is about.
+          </p>
+          <p>
+            <Link href="/contact" className="btn btn--secondary">
+              Go to the contact form
+            </Link>
+          </p>
+        </>
+      ) : (
+        // The contact form records consent to talk about coverage; it is not a channel for
+        // questions about these terms, so it is not offered here as one.
+        <p>
+          Until direct contact details are listed here, reply to any message from our team or ask
+          the person who contacts you.
+        </p>
+      )}
     </div>
   );
 }
@@ -59,7 +67,7 @@ export default function TermsPage() {
 
   const summary = [
     'This site offers general education about insurance, not personal advice.',
-    'Only an insurer can decide whether you qualify and what coverage costs. Your policy documents are what count.',
+    'Insurers decide whether they will cover you and what it costs. For Medicaid, CHIP and Marketplace financial help, the government program decides. Your policy documents are what count.',
     'Sending a form asks a person to contact you. It doesn’t make you a client or buy anything.',
     'A team inquiry is not a job application or a job offer, and no income is guaranteed.',
     'Please use the site honestly, and stay out of our private staff system.',
@@ -107,8 +115,10 @@ export default function TermsPage() {
         <>
           <p>
             We can’t promise that you will qualify for any coverage, what it will cost, or that an
-            application will be approved. Insurers make those decisions. They often depend on your
-            age, where you live, the plan you choose and, for many policies, your health history.
+            application will be approved. Insurers decide whether they will cover you and what it
+            costs. Their decisions often depend on your age, where you live, the plan you choose
+            and, for many policies, your health history. For Medicaid, CHIP and Marketplace
+            financial help, the government program decides.
           </p>
           <p>
             Any example of a price or a benefit on this site is there to explain an idea. It is not
@@ -136,7 +146,8 @@ export default function TermsPage() {
           <p>
             Sending a form asks a person on our team to contact you. It does not make you our client,
             and it does not create an insurance policy or any other contract. No coverage starts
-            until an insurer accepts an application and issues a policy.
+            until an insurer accepts an application and issues a policy. For a Marketplace plan,
+            coverage starts only after you enroll and make your first payment.
           </p>
           <p>
             Agreeing to be contacted is not a condition of buying anything. We try to reply

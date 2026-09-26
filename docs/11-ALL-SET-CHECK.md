@@ -106,7 +106,34 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 - Secrets live in server-only modules (`src/allset/env.ts`, `import 'server-only'`).
 - Logs carry no personal data (`src/allset/log.ts` withholds PII-named fields
   and never logs error messages that can quote values).
-- Admin pages send `noindex`, `no-store`, and a nonce-based CSP.
+- Admin pages send `noindex`, `no-store`, and a nonce-based CSP. `/contact`
+  and `/team` (the pages that collect personal data) get the same per-request
+  nonce policy; other public pages use a static baseline policy.
+- Sign-in: per-connection and per-account rate limits run before any password
+  work; the account's failure counter is claimed atomically, so a parallel
+  burst can't slip past the lock (5 failures → 15-minute lock). Real and
+  unknown accounts answer identically through the lockout. Trade-off: anyone
+  who knows a staff email can keep that account locked; an owner can still
+  issue a reset link.
+- One-time links (invites, password resets, alert-recipient confirmation)
+  carry the token in the URL fragment (`#token=…`), which browsers never send
+  to a server, a log or a `Referer` header. The page reads it, then strips it
+  from the address bar.
+- Lead search text travels in a short-lived `HttpOnly`, `SameSite=Strict`
+  cookie (cleared at sign-out), never the URL, so names and emails stay out of
+  request logs.
+- A repeat submission never overwrites a lead's contact details (someone who
+  knows only an email address must not redirect our calls). The new details
+  are stored on the new inquiry, the lead is flagged "needs review", and staff
+  either keep the originals or apply the new ones after confirming with the
+  person.
+- Do-not-contact list (`allset.contact_suppressions`): keyed HMACs of the
+  email and phone of anyone marked "Do not contact", or deleted with "they
+  also asked us not to contact them". A later submission matching it is still
+  saved but flagged on the lead. Keyed by `APP_SECRET`: rotating that secret
+  orphans the list.
+- New-inquiry alert emails stop at 60 per hour (leads still save; the audit
+  log records `alerts.throttled`).
 
 ---
 
@@ -124,6 +151,7 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 | `RESEND_API_KEY`, `NOTIFY_FROM` | for alerts | Without them, alerts fail visibly in the admin |
 | `RESEND_WEBHOOK_SECRET` | for delivery tracking | Svix signing secret from Resend |
 | `SITE_INDEXABLE` | launch | `true` allows indexing — but only once every launch-required fact is verified |
+| `ALLOW_PRELAUNCH_INQUIRIES` | preview only | `true` opens the forms before launch, for a private, access-protected preview. Without it, forms stay closed (enforced in the server action) until every launch-required fact is verified. Never set it on a public deployment before launch |
 | `BUSINESS_TIMEZONE` | no | IANA zone for "due today" (default `America/Chicago`) |
 
 ### Database
@@ -144,6 +172,14 @@ variable afterwards.
 `vercel.json` runs `/api/cron/notifications` (retry pending alerts) and
 `/api/cron/retention` (purge per the retention policy) daily. Both require
 `Authorization: Bearer $CRON_SECRET`.
+
+Retention (`src/allset/retention.ts`, rendered into the privacy policy):
+leads, inquiries and consent records 60 months after last activity;
+do-not-contact hashes 5 years; audit events 3 years; alert records 12 months;
+rate-limit counters 2 days; deactivated staff accounts anonymized after 3
+years. These periods are a starting point for counsel to confirm against the
+record-keeping rules that apply to the business (state insurance
+record-retention rules and TCPA consent evidence among them).
 
 ### Photos
 

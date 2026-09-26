@@ -62,7 +62,9 @@ export const LIMITS = {
   inquiryPerIpDay: { bucket: 'inquiry-ip-day', max: 20, windowSeconds: 86_400 },
   inquiryPerEmailHour: { bucket: 'inquiry-email-1h', max: 4, windowSeconds: 3_600 },
   loginPerIp: { bucket: 'login-ip-15m', max: 20, windowSeconds: 900 },
+  // Counts every attempt, successful or not, so parallel bursts can't slip under it.
   loginPerEmail: { bucket: 'login-email-15m', max: 10, windowSeconds: 900 },
+  passwordChangePerStaff: { bucket: 'password-change-15m', max: 5, windowSeconds: 900 },
   exportPerStaff: { bucket: 'export-staff-1h', max: 10, windowSeconds: 3_600 },
   setupPerIp: { bucket: 'setup-ip-1h', max: 10, windowSeconds: 3_600 },
 } as const satisfies Record<string, Limit>;

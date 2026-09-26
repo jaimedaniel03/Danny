@@ -23,7 +23,9 @@ export const dynamic = 'force-dynamic';
 
 // These URLs carry signed tokens tied to one person's phone number.
 export const metadata = {
-  title: 'Okay a follow-up call',
+  // Danny's consent page belongs to the agency in agency.config.json, not
+  // to All Set Check, so it must not inherit the site's title template.
+  title: { absolute: 'Okay a follow-up call' },
   robots: { index: false, follow: false, nocache: true },
 };
 

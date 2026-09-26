@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 const PLACES = [
   { href: '/', title: 'Home', text: 'Start from the beginning.' },
   { href: '/coverage', title: 'Coverage', text: 'How life and health insurance work, in plain words.' },
-  { href: '/contact', title: 'Contact', text: 'Ask a question or start a coverage check.' },
+  { href: '/contact', title: 'Contact', text: 'Start a coverage check.' },
 ] as const;
 
 /*

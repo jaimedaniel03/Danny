@@ -52,3 +52,51 @@ jobs:
             exit 1
           fi
           echo "No call media in the index."
+
+  site:
+    name: All Set Check — lint, database tests, end-to-end
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # With TEST_DATABASE_ADMIN_URL set, the database suites run against a
+      # throwaway database built from the real migration, as a restricted role.
+      - name: Unit and database tests
+        run: npx vitest run
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      # Fresh database → production build → Playwright (forms, permissions,
+      # axe WCAG 2.2 AA, keyboard, mobile menu, reduced motion, no-JS, layout).
+      - name: End-to-end
+        run: scripts/e2e/run.sh
+
+      - name: Keep traces from failed runs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

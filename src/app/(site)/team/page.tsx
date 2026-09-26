@@ -15,7 +15,7 @@ import styles from './team.module.css';
 export const metadata: Metadata = {
   title: 'Join the team',
   description:
-    'The role, licensing, training, pay, expenses and chargebacks, laid out before you reach out. Not a job offer, and no income is guaranteed.',
+    'What insurance agent work generally involves — licensing, training, pay, costs and chargebacks — before you reach out. Not a job offer; no income is guaranteed.',
   alternates: { canonical: '/team' },
 };
 
@@ -31,6 +31,9 @@ const ASK = [
   'How is commission paid, and when can it be charged back?',
   'Who trains me, for how long, and does training cost anything?',
   'Will I be expected to buy leads, software or materials?',
+  'Is anyone paid when I join, or for policies I sell?',
+  'Will I be expected to recruit other agents?',
+  'Will I be asked to buy a policy for myself or my family?',
   'Can I have all of this in writing?',
 ];
 
@@ -77,8 +80,8 @@ export default async function TeamPage() {
               Help families make sense of their coverage.
             </h1>
             <p className="lede">
-              The work is helping families understand their life and health coverage: listening first,
-              explaining options in plain words, and following up as their lives change.
+              The work is selling life and health insurance: listening first, explaining options in
+              plain words, and following up as families’ lives change.
             </p>
 
             <div className={`notice notice--warning ${styles.upfront}`}>
@@ -87,17 +90,20 @@ export default async function TeamPage() {
                 not an application, and it does not sign you up for anything.
               </p>
               <p>
-                <strong>No income is guaranteed.</strong> The role’s licensing, pay, costs and risks are
-                laid out below, before the form.
+                <strong>This is a sales role.</strong> Roles like this usually pay by commission on
+                policies sold, not a salary.
+              </p>
+              <p>
+                <strong>No income is guaranteed.</strong>{' '}
+                {specific
+                  ? 'The role’s licensing, pay, costs and risks are laid out below, before the form.'
+                  : 'Below, before the form, is general information about licensing, pay, costs and risks in this kind of work. This team’s own terms come in writing before you commit to anything.'}
               </p>
             </div>
 
             <div className={styles.actions}>
               <a href="#role-disclosures" className="btn btn--primary">
-                Read the role, in full <Arrow className="btn__arrow" />
-              </a>
-              <a href="#team-inquiry" className="btn btn--quiet">
-                Go to the inquiry form
+                Read about the work first <Arrow className="btn__arrow" />
               </a>
             </div>
           </div>
@@ -142,9 +148,9 @@ export default async function TeamPage() {
               <div>
                 <dt>Follow up</dt>
                 <dd>
-                  Check in as life changes, such as a new baby, a new job or a move, so coverage keeps up
-                  and a premium (the monthly price of a policy) that has become hard to pay gets a second
-                  look.
+                  When families want it, check in as life changes, such as a new baby, a new job or a
+                  move, so coverage keeps up and a premium (the monthly price of a policy) that has
+                  become hard to pay gets a second look.
                 </dd>
               </div>
             </dl>
@@ -162,7 +168,11 @@ export default async function TeamPage() {
         <div className="container">
           <header className={styles.disclosuresHead} data-reveal>
             <p className="eyebrow">Role disclosures</p>
-            <h2 id="disclosures-title">Before you reach out: the role, in full</h2>
+            <h2 id="disclosures-title">
+              {specific
+                ? 'Before you reach out: the role, in full'
+                : 'Before you reach out: what this kind of work involves'}
+            </h2>
             {role ? (
               <p className="lede">
                 These are the terms for the <strong>{role.title}</strong> role. You will also get them in
@@ -194,14 +204,15 @@ export default async function TeamPage() {
               ) : (
                 <>
                   <p>
-                    Many insurance agent roles are independent-contractor positions paid by commission,
-                    not salaried jobs. An independent contractor is not an employee. They usually pay
-                    their own taxes and business costs, and don’t get employee benefits such as health
-                    coverage or paid time off.
+                    Many insurance agents are independent contractors, not employees. They are paid by
+                    commission, not a salary. Contractors usually pay their own taxes and business
+                    costs. They don’t get employee benefits like health coverage or paid time off.
                   </p>
                   <p>
                     Some teams are set up so the agent or agency you work under, often called your
-                    “upline,” earns a share of the commission on your sales. Ask who that would be.
+                    “upline,” earns a share of the commission on your sales. Ask who that would be,
+                    how much of your commission they keep, and whether anyone is paid for recruiting
+                    you.
                   </p>
                 </>
               )}
@@ -213,14 +224,23 @@ export default async function TeamPage() {
               ) : (
                 <>
                   <p>
-                    Selling life or health insurance requires a state insurance producer license for each
-                    line you sell: life, health, or both. Until you are licensed for a line, you can’t
-                    sell that kind of insurance.
+                    Selling life or health insurance requires a state license for each line you sell:
+                    life, health, or both. The license makes you an insurance producer, the legal term
+                    for a licensed agent. Until you are licensed for a line, you can’t sell that kind of
+                    insurance.
                   </p>
                   <ul>
                     <li>Getting licensed usually involves a pre-licensing course and a state exam, with fees.</li>
                     <li>Many states also require a background check and fingerprinting.</li>
                     <li>You need a license in each state where you sell, not only the state you live in.</li>
+                    <li>
+                      To sell an insurance company’s policies, you usually also need an appointment:
+                      that company’s approval to sell for it.
+                    </li>
+                    <li>
+                      Selling Marketplace or Medicare plans also requires separate certification for
+                      those plans.
+                    </li>
                   </ul>
                 </>
               )}
@@ -256,7 +276,8 @@ export default async function TeamPage() {
                 <>
                   <p>
                     Many agent roles are paid by commission: a share of the premium on policies you sell.
-                    There is often no base salary.
+                    There is often no base salary. For health plans, commission is often a flat dollar
+                    amount for each person covered, each month, rather than a percentage.
                   </p>
                   <p>
                     Commission depends on policies that are actually sold and kept in force, meaning

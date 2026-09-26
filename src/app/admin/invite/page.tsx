@@ -1,38 +1,23 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Mark } from '@/components/brand/Mark';
-import { InviteForm } from '@/components/admin/AuthForms';
-import { db } from '@/allset/db/client';
-import { findInvite } from '@/allset/auth/accounts';
+import { InviteFromLink } from '@/components/admin/AuthForms';
 
 export const metadata: Metadata = { title: 'Set your password' };
 
-interface Props {
-  readonly searchParams: Promise<{ token?: string }>;
-}
-
-export default async function InvitePage({ searchParams }: Props) {
-  const { token = '' } = await searchParams;
-  const invite = await findInvite(db(), token.slice(0, 100));
-
+/**
+ * The invite token is in the URL fragment, which never reaches the server;
+ * the page reads it in the browser (so this page needs JavaScript).
+ */
+export default function InvitePage() {
   return (
     <main id="main" className="container">
       <div className="auth-card">
         <Mark size={44} />
         <h1 className="admin-title">Set your password</h1>
-        {invite ? (
-          <>
-            <p>
-              Welcome, {invite.displayName}. Choose a password for <strong>{invite.email}</strong>.
-            </p>
-            <InviteForm token={token} email={invite.email} />
-          </>
-        ) : (
-          <p>
-            This link has expired or was already used. Ask an owner for a new one, or{' '}
-            <Link href="/admin/login">sign in</Link>.
-          </p>
-        )}
+        <InviteFromLink />
+        <noscript>
+          <p>This page needs JavaScript to read your one-time link securely.</p>
+        </noscript>
       </div>
     </main>
   );

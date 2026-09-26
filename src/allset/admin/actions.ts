@@ -14,7 +14,7 @@ import { after } from 'next/server';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/allset/db/client';
-import { adminSetupToken, publicBaseUrl } from '@/allset/env';
+import { adminSetupToken, isProduction, publicBaseUrl } from '@/allset/env';
 import { log } from '@/allset/log';
 import { requestContext } from '@/allset/request';
 import { hit, LIMITS } from '@/allset/ratelimit';
@@ -35,9 +35,21 @@ import {
   clearSessionCookie,
   readSessionToken,
   safeReturnPath,
+  SEARCH_COOKIE,
   setSessionCookie,
 } from '@/allset/auth/session-cookie';
-import { addNote, assignLead, deleteLead, LeadNotFound, setFollowUp, updateStatus } from '@/allset/leads/repo';
+import { cookies } from 'next/headers';
+import { findInvite } from '@/allset/auth/accounts';
+import {
+  addNote,
+  applyInquiryDetails,
+  assignLead,
+  deleteLead,
+  LeadNotFound,
+  markReviewed,
+  setFollowUp,
+  updateStatus,
+} from '@/allset/leads/repo';
 import { addRecipient, confirmRecipient, removeRecipient, resendConfirmation } from '@/allset/notifications/recipients';
 import { deliverPending, enqueueTestAlerts, retryFailed } from '@/allset/notifications/outbox';
 import type { ActionState } from './action-state';
@@ -75,11 +87,11 @@ export async function signInAction(_previous: ActionState, form: FormData): Prom
     const ctx = await requestContext();
     const result = await signIn(db(), email, password, { ip: ctx.ip });
     if (!result.ok) {
-      if (result.reason === 'rate_limited') {
+      if (result.reason === 'throttled') {
         const minutes = Math.ceil((result.retryAfterSeconds ?? 900) / 60);
+        // One message for a locked account and a throttled connection alike.
         return fail(`Too many sign-in attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`);
       }
-      if (result.reason === 'locked') return fail('This account is locked for 15 minutes after several failed attempts.');
       return fail('That email and password don’t match an active account.');
     }
     staffId = result.staffId;
@@ -92,15 +104,44 @@ export async function signInAction(_previous: ActionState, form: FormData): Prom
 
 export async function signOutAction(): Promise<void> {
   const token = await readSessionToken();
+  let revoked = true;
   if (token) {
     try {
       await revokeSession(db(), token);
     } catch (error) {
+      revoked = false;
       log.error('admin.sign_out_failed', error);
     }
   }
   await clearSessionCookie();
-  redirect('/admin/login?signed_out=1');
+  // Don't claim a full sign-out if the server-side session survived.
+  redirect(revoked ? '/admin/login?signed_out=1' : '/admin/login?signed_out=partial');
+}
+
+/**
+ * Lead search. The filters that carry no personal data stay in the URL (so
+ * links like "overdue follow-ups" work); the search text goes in a short-lived
+ * cookie so names, emails and phone numbers never appear in request logs.
+ */
+export async function searchLeadsAction(form: FormData): Promise<void> {
+  await actorForAction();
+  const q = text(form, 'q', 100).trim();
+  const jar = await cookies();
+  jar.set(SEARCH_COOKIE, q, {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: 'strict',
+    path: '/',
+    maxAge: q ? 3600 : 0,
+  });
+  const params = new URLSearchParams();
+  for (const key of ['status', 'kind', 'assigned', 'due'] as const) {
+    const value = text(form, key, 64);
+    if (value) params.set(key, value);
+  }
+  if (q) params.set('search', '1');
+  const query = params.toString();
+  redirect(`/admin/leads${query ? `?${query}` : ''}`);
 }
 
 export async function setupAction(_previous: ActionState, form: FormData): Promise<ActionState> {
@@ -212,7 +253,9 @@ export async function deleteLeadAction(_previous: ActionState, form: FormData): 
   let reference: string;
   try {
     const actor = await actorForAction();
-    ({ reference } = await deleteLead(db(), actor, id, text(form, 'confirmation', 40)));
+    ({ reference } = await deleteLead(db(), actor, id, text(form, 'confirmation', 40), {
+      suppress: form.get('suppress') === 'yes',
+    }));
     revalidatePath('/admin/leads');
   } catch (error) {
     return explain(error, 'admin.delete_failed');
@@ -220,10 +263,44 @@ export async function deleteLeadAction(_previous: ActionState, form: FormData): 
   redirect(`/admin/leads?deleted=${encodeURIComponent(reference)}`);
 }
 
+// Both review actions remove the form they were sent from (the flag clears),
+// so their confirmation is shown by the page, not inside the form.
+export async function markReviewedAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  const id = text(form, 'leadId', 64);
+  try {
+    const actor = await actorForAction();
+    await markReviewed(db(), actor, id);
+  } catch (error) {
+    return explain(error, 'admin.mark_reviewed_failed');
+  }
+  revalidatePath(leadPath(id));
+  redirect(`${leadPath(id)}?reviewed=kept`);
+}
+
+export async function applyDetailsAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  const id = text(form, 'leadId', 64);
+  try {
+    const actor = await actorForAction();
+    await applyInquiryDetails(db(), actor, id, text(form, 'inquiryId', 64));
+  } catch (error) {
+    return explain(error, 'admin.apply_details_failed');
+  }
+  revalidatePath(leadPath(id));
+  redirect(`${leadPath(id)}?reviewed=updated`);
+}
+
 // ── Team ─────────────────────────────────────────────────────────────────
 
+// The token rides in the URL fragment, which browsers never send to the
+// server — so it can't land in request logs or a Referer header.
 function inviteLink(token: string): string {
-  return `${publicBaseUrl() ?? ''}/admin/invite?token=${encodeURIComponent(token)}`;
+  return `${publicBaseUrl() ?? ''}/admin/invite#token=${encodeURIComponent(token)}`;
+}
+
+/** Called by the invite page once it has read the token from the fragment. */
+export async function inviteInfoAction(token: string): Promise<{ displayName: string; email: string } | null> {
+  const invite = await findInvite(db(), token.slice(0, 100));
+  return invite ? { displayName: invite.displayName, email: invite.email } : null;
 }
 
 export async function inviteAction(_previous: ActionState, form: FormData): Promise<ActionState> {

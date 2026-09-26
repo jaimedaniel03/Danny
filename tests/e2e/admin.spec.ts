@@ -6,7 +6,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { closeDb, db, fillCoverage, referenceFromSuccess, uniqueEmail, useFreshIp, waitLikeAPerson } from './helpers';
+import { closeDb, db, fillCoverage, referenceFromSuccess, searchLeads, uniqueEmail, useFreshIp, waitLikeAPerson } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -36,7 +36,7 @@ async function submitLead(browser: Browser, name: string): Promise<{ reference: 
 }
 
 async function openLead(page: Page, reference: string): Promise<void> {
-  await page.goto(`/admin/leads?status=all&q=${reference}`);
+  await searchLeads(page, reference);
   await page.locator('.data-table a').first().click();
   await expect(page).toHaveURL(/\/admin\/leads\/[0-9a-f-]{36}$/);
 }
@@ -122,7 +122,7 @@ test('the owner sees that alerts are not configured, and a failed alert is liste
   await expect(owner.getByText('New-inquiry alerts need attention')).toBeVisible();
   await owner.goto('/admin/alerts');
   await expect(owner.getByText('Email is not configured on this deployment')).toBeVisible();
-  await owner.getByLabel('Email address').fill(uniqueEmail('alerts'));
+  await owner.getByLabel('Email address', { exact: true }).fill(uniqueEmail('alerts'));
   await owner.getByRole('button', { name: 'Add and send confirmation' }).click();
   await expect(owner.getByText(/A confirmation email is on its way/)).toBeVisible();
   await expect
@@ -140,12 +140,13 @@ test('the owner invites a staff member, who sets their own password', async ({ b
   await owner.getByLabel('Role').selectOption('staff');
   await owner.getByRole('button', { name: 'Create account and get link' }).click();
   inviteLink = (await owner.getByLabel('One-time link').innerText()).trim();
-  expect(inviteLink).toMatch(/\/admin\/invite\?token=/);
+  // The token rides in the fragment, so it never reaches a server log or a Referer header.
+  expect(inviteLink).toMatch(/\/admin\/invite#token=/);
 
   staffContext = await browser.newContext();
   staff = await staffContext.newPage();
   await useFreshIp(staff);
-  await staff.goto(new URL(inviteLink).pathname + new URL(inviteLink).search);
+  await staff.goto(new URL(inviteLink).pathname + new URL(inviteLink).hash);
   await staff.getByLabel('New password').fill(STAFF.password);
   await staff.getByLabel('Type it again').fill(STAFF.password);
   await staff.getByRole('button', { name: 'Set password and sign in' }).click();
@@ -154,7 +155,7 @@ test('the owner invites a staff member, who sets their own password', async ({ b
 
   // The link works once.
   const reuse = await browser.newPage();
-  await reuse.goto(new URL(inviteLink).pathname + new URL(inviteLink).search);
+  await reuse.goto(new URL(inviteLink).pathname + new URL(inviteLink).hash);
   await expect(reuse.getByText(/expired or was already used/)).toBeVisible();
   await reuse.close();
 });
@@ -212,7 +213,7 @@ test('a lead assigned to someone else is invisible to staff', async ({ browser }
   await expect(owner.getByText('Lead assigned to you.')).toBeVisible();
   const leadUrl = owner.url();
 
-  await staff.goto(`/admin/leads?status=all&q=${leads[1]!.reference}`);
+  await searchLeads(staff, leads[1]!.reference);
   await expect(staff.getByText('No leads match.')).toBeVisible();
   const response = await staff.goto(new URL(leadUrl).pathname);
   expect(response?.status()).toBe(404);
@@ -225,7 +226,11 @@ test('the owner searches, filters, reassigns and exports', async () => {
   await owner.getByRole('button', { name: 'Apply' }).click();
   await expect(owner.getByRole('link', { name: 'Unclaimed Family' })).toBeVisible();
 
-  await owner.goto(`/admin/leads?assigned=unassigned&status=all&q=${leads[0]!.reference}`);
+  // The search text never appears in the address bar (or the server's request logs).
+  expect(owner.url()).not.toContain(encodeURIComponent(leads[0]!.email));
+  expect(owner.url()).not.toContain(leads[0]!.email);
+
+  await searchLeads(owner, leads[0]!.reference, { assigned: 'unassigned' });
   await expect(owner.getByText('No leads match.')).toBeVisible();
 
   await owner.goto('/admin/leads?status=all');
@@ -236,6 +241,31 @@ test('the owner searches, filters, reassigns and exports', async () => {
   const csv = readFileSync(await download.path(), 'utf8');
   expect(csv).toContain('Reference,Kind,Status');
   expect(csv).toContain(leads[0]!.reference);
+});
+
+test('a repeat request with new details is held for review until the owner confirms it', async ({ browser }) => {
+  const first = await submitLead(browser, 'Changed Family');
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await useFreshIp(page);
+  await page.goto('/contact');
+  await waitLikeAPerson(page);
+  await fillCoverage(page, { name: 'Changed Family', email: first.email, zip: '60601', interest: 'Health insurance', method: 'Text message', phone: '312-555-0188' });
+  await page.getByRole('button', { name: 'Send my request' }).click();
+  const second = await referenceFromSuccess(page);
+  await context.close();
+
+  await openLead(owner, first.reference);
+  await expect(owner.getByText('A later request has different details.')).toBeVisible();
+  // Still the original phone until someone confirms the change.
+  await expect(owner.locator('section[aria-labelledby="contact-title"]')).toContainText('(312) 555-0177');
+
+  await owner.getByRole('form', { name: `Use details from ${second}` }).getByRole('button', { name: 'Use these details' }).click();
+  await expect(owner.getByText('Contact details updated from that request.')).toBeVisible();
+  await expect(owner.getByText('A later request has different details.')).toBeHidden();
+  const [row] = await db()<{ phone_e164: string; contact_method: string; coverage_interest: string; needs_review: boolean }[]>`
+    select phone_e164, contact_method, coverage_interest, needs_review from allset.leads where email = ${first.email}`;
+  expect(row).toEqual({ phone_e164: '+13125550188', contact_method: 'text', coverage_interest: 'health', needs_review: false });
 });
 
 test('the owner deletes a lead only after typing its reference, and the audit log records it', async () => {
@@ -304,6 +334,9 @@ test('staff password changes sign out other devices; sign-out ends the session',
 
   await staff.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(staff).toHaveURL(/\/admin\/login\?signed_out=1/);
+  // Nothing personal is left in the browser: no session, no remembered search.
+  const leftover = (await staffContext.cookies()).filter((c) => /asc_(session|lead_q)/.test(c.name) && c.value);
+  expect(leftover).toEqual([]);
   await staff.goto('/admin');
   await expect(staff).toHaveURL(/\/admin\/login/);
 });

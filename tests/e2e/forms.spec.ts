@@ -15,18 +15,18 @@ test('coverage form: errors are summarized, focused, tied to fields, and input i
   await page.goto('/contact');
   await waitLikeAPerson(page);
   await page.getByLabel('Full name').fill('Ana Ruiz');
-  await page.getByLabel('Email address').fill('not-an-email');
+  await page.getByLabel('Email address', { exact: true }).fill('not-an-email');
   await page.getByRole('button', { name: 'Send my request' }).click();
 
   const summary = page.getByRole('alert').filter({ hasText: 'things to fix' });
   await expect(summary).toBeVisible();
   await expect(summary).toBeFocused();
   await expect(summary.getByRole('link')).toHaveCount(5);
-  await expect(page.getByLabel('Email address')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByLabel('Email address')).toHaveAccessibleDescription(/Enter an email address like/);
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveAccessibleDescription(/Enter an email address like/);
   // What the person typed is still there.
   await expect(page.getByLabel('Full name')).toHaveValue('Ana Ruiz');
-  await expect(page.getByLabel('Email address')).toHaveValue('not-an-email');
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveValue('not-an-email');
   // The consent box was never pre-checked.
   await expect(page.locator('#inquiry-consent')).not.toBeChecked();
 
@@ -93,10 +93,12 @@ test('coverage form: a network failure keeps everything, and the retry saves exa
   });
 
   await page.getByRole('button', { name: 'Send my request' }).click();
-  const problem = page.getByRole('alert').filter({ hasText: 'Your request was not sent' });
-  await expect(problem).toContainText('nothing was sent');
+  const problem = page.getByRole('alert').filter({ hasText: 'We couldn’t finish sending your request' });
+  // A lost response can't tell us whether it arrived, so the page doesn't claim either way.
+  await expect(problem).toContainText('couldn\'t confirm that your request reached us');
+  await expect(problem).toContainText('won\'t send it twice');
   await expect(page.getByLabel('Full name')).toHaveValue('Retry Person');
-  await expect(page.getByLabel('Email address')).toHaveValue(email);
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveValue(email);
   await expect(page.locator('#inquiry-consent')).toBeChecked();
 
   await page.getByRole('button', { name: 'Send my request' }).click();
@@ -129,9 +131,10 @@ test('coverage form: the same person twice becomes one lead with two requests', 
     await page.getByRole('button', { name: 'Send my request' }).click();
     await referenceFromSuccess(page);
   }
-  const leads = await db()<{ submission_count: number; coverage_interest: string }[]>`
-    select submission_count, coverage_interest from allset.leads where email = ${email}`;
-  expect(leads).toEqual([{ submission_count: 2, coverage_interest: 'health' }]);
+  // The lead keeps what it was first told; the change waits for a person to confirm it.
+  const leads = await db()<{ submission_count: number; coverage_interest: string; needs_review: boolean }[]>`
+    select submission_count, coverage_interest, needs_review from allset.leads where email = ${email}`;
+  expect(leads).toEqual([{ submission_count: 2, coverage_interest: 'life', needs_review: true }]);
 });
 
 test('coverage form: the hidden spam trap is answered like success and saves nothing', async ({ page }) => {
@@ -163,8 +166,8 @@ test('coverage form: a burst from one connection is rate-limited with input kept
   await waitLikeAPerson(page);
   await fillCoverage(page, { name: 'Burst Person', email, zip: '73301', interest: 'Life insurance', method: 'Email' });
   await page.getByRole('button', { name: 'Send my request' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'not sent' })).toContainText('several requests from this connection');
-  await expect(page.getByLabel('Email address')).toHaveValue(email);
+  await expect(page.getByRole('alert').filter({ hasText: 'couldn’t finish sending' })).toContainText('several requests recently from this connection');
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveValue(email);
   expect(await db()`select 1 from allset.leads where email = ${email}`).toHaveLength(0);
 });
 
@@ -187,13 +190,13 @@ test('team form: role disclosures come first, acknowledgment is required, and it
 
   await waitLikeAPerson(page);
   await page.getByLabel('Full name').fill('Chris Recruit');
-  await page.getByLabel('Email address').fill(email);
+  await page.getByLabel('Email address', { exact: true }).fill(email);
   await page.getByLabel('ZIP code').fill('85001');
   await page.getByRole('radio', { name: /studying for the licensing exam/ }).check();
   await page.getByRole('radio', { name: 'Email', exact: true }).check();
   await page.locator('#inquiry-consent').check();
   await page.getByRole('button', { name: 'Send my team inquiry' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'thing' })).toContainText('role disclosures');
+  await expect(page.getByRole('alert').filter({ hasText: 'thing' })).toContainText('information about this work');
 
   await page.locator('#inquiry-disclosure-ack').check();
   await page.getByRole('button', { name: 'Send my team inquiry' }).click();
@@ -214,7 +217,7 @@ test.describe('without JavaScript', () => {
     await page.goto('/contact');
     await page.waitForTimeout(2200);
     await page.getByLabel('Full name').fill('No Script');
-    await page.getByLabel('Email address').fill(email);
+    await page.getByLabel('Email address', { exact: true }).fill(email);
     await page.getByRole('button', { name: 'Send my request' }).click();
     await expect(page.getByText(/things to fix/)).toBeVisible();
     await expect(page.getByLabel('Full name')).toHaveValue('No Script');

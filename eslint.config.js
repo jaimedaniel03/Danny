@@ -28,6 +28,8 @@ export default tseslint.config(
       'next-env.d.ts',
       // Plain-JS browser probes used during manual QA; not part of the app.
       'scripts/qa/**',
+      // Plain-JS test harness scripts, run directly by node outside the TS project.
+      'scripts/e2e/*.mjs',
     ],
   },
 

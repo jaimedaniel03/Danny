@@ -59,11 +59,12 @@ const PRINCIPLES: readonly Principle[] = [
     ),
   },
   {
-    title: 'Check in as life changes.',
+    title: 'Check in as life changes, if you’d like us to.',
     body: (
       <>
-        A new baby, a new job, a move, a tighter budget. We check in so your coverage keeps up, and so
-        a premium that has become hard to carry gets a second look before the policy lapses.
+        A new baby, a new job, a move, a tighter budget. If you’d like, we’ll check in when life
+        changes. If a premium gets hard to pay, tell us before you miss a payment, and we’ll look at
+        your options with you.
       </>
     ),
   },
@@ -72,8 +73,9 @@ const PRINCIPLES: readonly Principle[] = [
     body: (
       <>
         Insurance protects against a specific risk. It is not a savings plan, an investment, or a way
-        out of debt. Some permanent life policies build cash value: money inside the policy that grows
-        slowly, after fees. Taking it out can shrink what your family receives. When we explain a
+        out of debt. Some permanent life policies build cash value: money inside the policy. It builds
+        slowly, fees come out of it, and in some policies it can go down. Taking it out can shrink
+        what your family receives. When we explain a
         policy like that, we explain its costs and limits too.
       </>
     ),
@@ -125,7 +127,7 @@ export default function StoryPage() {
           <div className={styles.introMedia}>
             <Photo
               slug="grandmother-granddaughter"
-              alt="An older woman in a mustard cardigan sips tea across a kitchen table from a young girl, with a teapot, lemons and a plate of pastries between them."
+              alt="An older woman and a young girl having tea and snacks at a kitchen table."
               sizes="(min-width: 60rem) 44vw, 100vw"
               priority
               className={styles.photo}
@@ -177,7 +179,7 @@ export default function StoryPage() {
                 </div>
                 <div>
                   <dt>Follow-up</dt>
-                  <dd>We check in as life changes, not only on the day a policy starts.</dd>
+                  <dd>If you’d like, we’ll check in as life changes, not only on the day a policy starts.</dd>
                 </div>
               </dl>
             </div>
@@ -238,7 +240,7 @@ export default function StoryPage() {
         <div className={`container ${styles.freedom}`}>
           <div className={styles.freedomHead} data-reveal>
             <p className="eyebrow">Why the founders do this</p>
-            <h2 id="freedom-title">What financial freedom means here</h2>
+            <h2 id="freedom-title">The founders’ own goal</h2>
             <p className={styles.freedomLede}>
               Our founders are building All Set Check because they want financial freedom for their own
               families. That is their personal ambition, and we would rather tell you plainly than
@@ -254,19 +256,14 @@ export default function StoryPage() {
                 freedom. Insurance protects against a specific risk. It does not build wealth.
               </li>
               <li>
-                <p>
-                  <strong>It is not a promise to anyone who joins the team.</strong> Income from this
-                  work is not guaranteed. The role, its costs and its risks are laid out in full before
-                  anyone reaches out.
-                </p>
-                <Link href="/team#role-disclosures" className={`target ${styles.inkLink}`}>
-                  Read the role disclosures <Arrow />
-                </Link>
+                <strong>It is not a promise to anyone who joins the team.</strong> Income from this
+                work is not guaranteed. The team page explains the general costs and risks of this
+                work, and the specific terms come in writing before anyone commits.
               </li>
               <li>
                 <strong>It does not decide what we recommend.</strong> Your budget and your family’s
                 needs do. If the right answer is a smaller policy, a public program, or nothing new at
-                all, that is the answer you will get.
+                all, that is what we will tell you.
               </li>
             </ul>
           </div>
@@ -293,8 +290,8 @@ export default function StoryPage() {
             <div className={styles.path} data-reveal>
               <h3>Interested in the work</h3>
               <p>
-                Read what the role involves, including licensing, pay, costs and chargebacks, before you
-                decide whether to reach out.
+                Read what this kind of work involves, including licensing, pay, costs and chargebacks,
+                before you decide whether to reach out.
               </p>
               <Link href="/team" className="btn btn--secondary">
                 Read about joining the team

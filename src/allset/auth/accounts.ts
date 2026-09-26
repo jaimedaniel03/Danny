@@ -8,7 +8,7 @@ import 'server-only';
 import type { Sql, TransactionSql } from '@/allset/db/client';
 import { randomToken, sha256Hex, safeEqual } from '@/allset/crypto';
 import { recordAudit, type AuditActor } from '@/allset/audit';
-import { hit, peek, LIMITS } from '@/allset/ratelimit';
+import { hit, LIMITS } from '@/allset/ratelimit';
 import { dummyHash, hashPassword, passwordProblem, verifyPassword } from './password';
 import { revokeAllSessions } from './sessions';
 import { PermissionError, can, type Actor, type Role } from './roles';
@@ -27,17 +27,28 @@ function auditActor(actor: Actor): AuditActor {
 
 export type SignInResult =
   | { readonly ok: true; readonly staffId: string }
-  | { readonly ok: false; readonly reason: 'invalid' | 'locked' | 'rate_limited'; readonly retryAfterSeconds?: number };
+  | { readonly ok: false; readonly reason: 'invalid' | 'throttled'; readonly retryAfterSeconds?: number };
 
-interface LoginRow {
+interface AttemptRow {
   readonly id: string;
   readonly password_hash: string | null;
-  readonly is_active: boolean;
-  readonly locked: boolean;
   readonly display_name: string;
   readonly role: Role;
+  readonly failed_login_count: number;
 }
 
+/**
+ * Sign-in, hardened against parallel guessing:
+ *
+ *  1. Every attempt is counted (per IP and per email) before any password
+ *     work, so a burst of concurrent requests cannot slip under the limit.
+ *  2. The account's failure counter is claimed atomically in the same
+ *     statement that checks the lock; once it passes the threshold the
+ *     account is locked and no further password is even checked.
+ *  3. A locked account and a throttled connection get the same answer,
+ *     whether or not the password was right — so the lock cannot be used
+ *     to confirm a guess — and unknown emails do equivalent work.
+ */
 export async function signIn(
   sql: Sql,
   rawEmail: string,
@@ -46,65 +57,88 @@ export async function signIn(
 ): Promise<SignInResult> {
   const email = rawEmail.trim().toLowerCase().slice(0, 254);
 
-  // Check both limits before doing any expensive work.
-  const byIp = await peek(sql, LIMITS.loginPerIp, ctx.ip);
-  const byEmail = await peek(sql, LIMITS.loginPerEmail, email);
+  const byIp = await hit(sql, LIMITS.loginPerIp, ctx.ip);
+  const byEmail = await hit(sql, LIMITS.loginPerEmail, email);
   if (!byIp.allowed || !byEmail.allowed) {
+    await recordAudit(sql, { actor: null, action: 'auth.sign_in_throttled', details: { per_connection: !byIp.allowed, per_account: !byEmail.allowed } });
     return {
       ok: false,
-      reason: 'rate_limited',
+      reason: 'throttled',
       retryAfterSeconds: Math.max(byIp.allowed ? 0 : byIp.retryAfterSeconds, byEmail.allowed ? 0 : byEmail.retryAfterSeconds),
     };
   }
 
-  const [user] = await sql<LoginRow[]>`
-    select id, password_hash, is_active, display_name, role,
-           coalesce(locked_until > now(), false) as locked
-    from allset.staff_users where lower(email) = ${email}`;
+  // Claim an attempt on the account atomically. No row means: no such
+  // usable account, or it is locked right now.
+  const [claimed] = await sql<AttemptRow[]>`
+    update allset.staff_users
+    set failed_login_count = failed_login_count + 1, updated_at = now()
+    where lower(email) = ${email}
+      and is_active
+      and password_hash is not null
+      and (locked_until is null or locked_until <= now())
+    returning id, password_hash, display_name, role, failed_login_count`;
 
-  const usable = user && user.is_active && user.password_hash;
-  // Always spend the same work, whether or not the account exists.
-  const matches = await verifyPassword(password.slice(0, 256), usable ? usable : await dummyHash());
-
-  if (!usable || !matches || user.locked) {
-    await hit(sql, LIMITS.loginPerIp, ctx.ip);
-    await hit(sql, LIMITS.loginPerEmail, email);
-    if (user && usable && !user.locked) {
-      const [row] = await sql<{ failed_login_count: number }[]>`
-        update allset.staff_users
-        set failed_login_count = failed_login_count + 1,
-            locked_until = case when failed_login_count + 1 >= ${LOCKOUT_THRESHOLD}
-                                then now() + make_interval(mins => ${LOCKOUT_MINUTES}) else locked_until end,
-            updated_at = now()
-        where id = ${user.id}
-        returning failed_login_count`;
-      if ((row?.failed_login_count ?? 0) >= LOCKOUT_THRESHOLD) {
-        await sql`update allset.staff_users set failed_login_count = 0 where id = ${user.id}`;
-        await recordAudit(sql, { actor: null, action: 'auth.locked', entityType: 'staff', entityId: user.id });
-      }
-    }
+  if (!claimed) {
+    // Same cost as a real check, whether the account is missing or locked.
+    await verifyPassword(password.slice(0, 256), await dummyHash());
+    const [locked] = await sql<{ id: string }[]>`
+      select id from allset.staff_users where lower(email) = ${email} and locked_until > now()`;
     await recordAudit(sql, {
       actor: null,
       action: 'auth.sign_in_failed',
-      ...(user ? { entityType: 'staff' as const, entityId: user.id } : {}),
-      details: { known_account: Boolean(user), locked: Boolean(user?.locked) },
+      ...(locked ? { entityType: 'staff' as const, entityId: locked.id } : {}),
+      details: { known_account: Boolean(locked), locked: Boolean(locked) },
     });
-    // A correct password on a locked account still says "locked", so the
-    // lock is noticeable to the real owner without confirming the password.
-    return { ok: false, reason: user?.locked && matches ? 'locked' : 'invalid' };
+    if (locked) return { ok: false, reason: 'throttled', retryAfterSeconds: LOCKOUT_MINUTES * 60 };
+    // An unknown address answers like a real one would: refused past the lockout threshold,
+    // so the switch from "invalid" to "throttled" doesn't reveal which accounts exist.
+    return byEmail.count > LOCKOUT_THRESHOLD
+      ? { ok: false, reason: 'throttled', retryAfterSeconds: byEmail.retryAfterSeconds }
+      : { ok: false, reason: 'invalid' };
+  }
+
+  // Past the threshold within this lock window: lock, and don't check.
+  if (claimed.failed_login_count > LOCKOUT_THRESHOLD) {
+    await verifyPassword(password.slice(0, 256), await dummyHash());
+    await lockAccount(sql, claimed.id);
+    return { ok: false, reason: 'throttled', retryAfterSeconds: LOCKOUT_MINUTES * 60 };
+  }
+
+  const matches = await verifyPassword(password.slice(0, 256), claimed.password_hash!);
+  if (!matches) {
+    if (claimed.failed_login_count >= LOCKOUT_THRESHOLD) await lockAccount(sql, claimed.id);
+    await recordAudit(sql, {
+      actor: null,
+      action: 'auth.sign_in_failed',
+      entityType: 'staff',
+      entityId: claimed.id,
+      details: { known_account: true, locked: claimed.failed_login_count >= LOCKOUT_THRESHOLD },
+    });
+    // The attempt that triggers the lock still answers "invalid"; the next one is refused.
+    return { ok: false, reason: 'invalid' };
   }
 
   await sql`
     update allset.staff_users
     set failed_login_count = 0, locked_until = null, last_login_at = now(), updated_at = now()
-    where id = ${user.id}`;
+    where id = ${claimed.id}`;
   await recordAudit(sql, {
-    actor: { id: user.id, label: `${user.display_name} (${user.role})` },
+    actor: { id: claimed.id, label: `${claimed.display_name} (${claimed.role})` },
     action: 'auth.signed_in',
     entityType: 'staff',
-    entityId: user.id,
+    entityId: claimed.id,
   });
-  return { ok: true, staffId: user.id };
+  return { ok: true, staffId: claimed.id };
+}
+
+async function lockAccount(sql: Sql, staffId: string): Promise<void> {
+  const rows = await sql`
+    update allset.staff_users
+    set locked_until = now() + make_interval(mins => ${LOCKOUT_MINUTES}), failed_login_count = 0, updated_at = now()
+    where id = ${staffId} and (locked_until is null or locked_until <= now())
+    returning id`;
+  if (rows.length > 0) await recordAudit(sql, { actor: null, action: 'auth.locked', entityType: 'staff', entityId: staffId });
 }
 
 // ── First owner ──────────────────────────────────────────────────────────
@@ -272,6 +306,9 @@ export async function changePassword(
   current: string,
   next: string,
 ): Promise<FieldResult<null>> {
+  // A stolen session must not become a way to brute-force the real password.
+  const limit = await hit(sql, LIMITS.passwordChangePerStaff, actor.id);
+  if (!limit.allowed) return { ok: false, errors: { current: 'Too many attempts. Try again in 15 minutes.' } };
   const [row] = await sql<{ password_hash: string | null }[]>`
     select password_hash from allset.staff_users where id = ${actor.id}`;
   if (!row?.password_hash || !(await verifyPassword(current.slice(0, 256), row.password_hash))) {

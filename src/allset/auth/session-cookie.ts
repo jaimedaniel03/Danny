@@ -33,7 +33,33 @@ export async function setSessionCookie(token: string, expiresAt: Date): Promise<
 
 export async function clearSessionCookie(): Promise<void> {
   const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
+  // A __Host- cookie is only replaced by one with the same attributes
+  // (Secure, Path=/); a bare delete() is ignored by browsers.
+  jar.set(SESSION_COOKIE, '', {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+  });
+  // A search term can hold a name or email; don't leave it behind on a shared computer.
+  jar.set(SEARCH_COOKIE, '', {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+  });
+}
+
+/** Lead search terms are personal data; they ride in a cookie, not the URL (and so not in request logs). */
+export const SEARCH_COOKIE = isProduction() ? '__Host-asc_lead_q' : 'asc_lead_q';
+
+export async function readSearchTerm(): Promise<string | undefined> {
+  const jar = await cookies();
+  return jar.get(SEARCH_COOKIE)?.value.slice(0, 100) || undefined;
 }
 
 export async function readSessionToken(): Promise<string | null> {

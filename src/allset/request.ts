@@ -21,9 +21,26 @@ export interface RequestContext {
  */
 export function ipFrom(get: (name: string) => string | null): string {
   const real = get('x-real-ip')?.trim();
-  if (real) return real;
+  if (real) return rateLimitKey(real);
   const forwarded = get('x-forwarded-for')?.split(',')[0]?.trim();
-  return forwarded || 'unknown';
+  return forwarded ? rateLimitKey(forwarded) : 'unknown';
+}
+
+/**
+ * IPv6 hands one household or device a whole /64, so limiting per full
+ * address would give a single client billions of keys. Limit per /64.
+ * IPv4 (including IPv4-mapped IPv6) is used as is.
+ */
+export function rateLimitKey(ip: string): string {
+  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (mapped) return mapped[1]!;
+  if (!ip.includes(':')) return ip;
+  const [head = '', tail = ''] = ip.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const missing = Math.max(0, 8 - left.length - right.length);
+  const groups = ip.includes('::') ? [...left, ...Array<string>(missing).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
 
 export async function requestContext(): Promise<RequestContext> {

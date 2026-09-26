@@ -138,7 +138,20 @@ const FactsSchema = z
     /** Counsel's sign-off on the privacy policy and terms. */
     legalReview: verified(z.object({ reviewer: z.string().min(3), documents: z.array(z.string()).min(1) }).strict()).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((facts, ctx) => {
+    // Serving a state without a license there is unlicensed solicitation.
+    const licensed = new Set(facts.licenses.map((l) => l.value.state));
+    for (const state of facts.serviceArea?.value.states ?? []) {
+      if (!licensed.has(state)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['serviceArea', 'value', 'states'],
+          message: `${state} is in the service area but has no license on record`,
+        });
+      }
+    }
+  });
 
 export type BusinessFacts = z.infer<typeof FactsSchema>;
 
@@ -280,4 +293,9 @@ export const BRAND_NAME = 'All Set Check';
 
 export function businessName(facts: BusinessFacts = FACTS): string {
   return facts.legalEntity?.value.name ?? BRAND_NAME;
+}
+
+/** How a consent names the seller: the legal entity with its brand, once verified. */
+export function sellerName(facts: BusinessFacts = FACTS): string {
+  return facts.legalEntity ? `${facts.legalEntity.value.name} (${BRAND_NAME})` : BRAND_NAME;
 }

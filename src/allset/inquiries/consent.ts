@@ -12,7 +12,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { businessName } from '@/allset/content/facts';
+import { FACTS, sellerName } from '@/allset/content/facts';
 
 export type InquiryKind = 'coverage' | 'team';
 
@@ -22,20 +22,20 @@ function versionOf(kind: InquiryKind, text: string): string {
 
 function coverageText(): string {
   return (
-    `I agree that ${businessName()} may contact me about this request by the method I chose ` +
-    'above: email, phone call, or text message. A person on the team will reach out; this is ' +
-    'not consent to automated or prerecorded calls. Message and data rates may apply to texts. ' +
-    'I can reply STOP to texts, or ask at any time that you stop contacting me. Agreeing is not ' +
-    'a condition of buying anything.'
+    `I agree that ${sellerName()} may contact me about this request only by the method I chose ` +
+    'above, at the email address or phone number I entered. A person will reach out. This is not ' +
+    'consent to automated or prerecorded calls. Message and data rates may apply to texts. I can ' +
+    'reply STOP to any text, or ask at any time to stop being contacted. Agreeing is not a ' +
+    'condition of buying anything.'
   );
 }
 
 function teamText(): string {
   return (
-    `I agree that ${businessName()} may contact me about joining the team by the method I chose ` +
-    'above: email, phone call, or text message. A person on the team will reach out; this is not ' +
+    `I agree that ${sellerName()} may contact me about joining the team only by the method I chose ` +
+    'above, at the email address or phone number I entered. A person will reach out. This is not ' +
     'consent to automated or prerecorded calls. Message and data rates may apply to texts. I can ' +
-    'reply STOP to texts, or ask at any time that you stop contacting me. I understand this is an ' +
+    'reply STOP to any text, or ask at any time to stop being contacted. I understand this is an ' +
     'inquiry, not a job application or an offer of work.'
   );
 }
@@ -50,8 +50,41 @@ export function consentWording(kind: InquiryKind): ConsentWording {
   return { text, version: versionOf(kind, text) };
 }
 
-/** Team inquiries also acknowledge the role disclosures shown above the form. */
-export const TEAM_DISCLOSURE_ACK =
-  'I have read the role disclosures on this page, including that income is not guaranteed, that ' +
-  'licensing and other business costs may be mine to pay, and that commissions can be taken back ' +
-  '(charged back) if a policy is cancelled early.';
+/**
+ * Team inquiries also acknowledge the role information shown above the form.
+ * Short sentences on purpose: this is the part a recruit most needs to read.
+ * Versioned like the consent, and stored with every team inquiry.
+ */
+export interface Acknowledgment {
+  readonly lead: string;
+  readonly points: readonly string[];
+  readonly version: string;
+  /** Whether the page showed this team's verified terms or general information. */
+  readonly termsShown: 'team-specific' | 'general';
+}
+
+function acknowledgment(): Acknowledgment {
+  const termsShown = FACTS.teamRole ? 'team-specific' : 'general';
+  const lead =
+    termsShown === 'team-specific'
+      ? 'I have read the role terms on this page. I understand that:'
+      : 'I have read the information about this work on this page. I understand that:';
+  const points = [
+    'no income is guaranteed;',
+    'I may have to pay for licensing and other business costs;',
+    'commissions can be taken back (a chargeback) if a policy is cancelled early, and I could owe money.',
+  ];
+  const text = [lead, ...points].join(' ');
+  return {
+    lead,
+    points,
+    termsShown,
+    version: `team-ack-v1-${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 10)}`,
+  };
+}
+
+export const TEAM_DISCLOSURE_ACK: Acknowledgment = acknowledgment();
+
+export function acknowledgmentText(ack: Acknowledgment = TEAM_DISCLOSURE_ACK): string {
+  return [ack.lead, ...ack.points].join(' ');
+}

@@ -29,7 +29,7 @@ export const COVERAGE_INTEREST_LABELS: Record<CoverageInterest, string> = {
 };
 
 export const LICENSING_STATUS_LABELS: Record<LicensingStatus, string> = {
-  licensed_life_health: 'I hold a life and/or health license',
+  licensed_life_health: 'I have a life or health insurance license (or both)',
   licensed_other: 'I hold a different insurance license (for example, property)',
   studying: "I'm studying for the licensing exam",
   not_licensed: "I'm not licensed yet",
@@ -143,7 +143,7 @@ export function validateInquiry(kind: InquiryKind, values: InquiryValues): Valid
   else if (fullName.length < 2) errors.fullName = 'Enter your full name.';
   else if (fullName.length > LIMITS.fullName) errors.fullName = `Use ${LIMITS.fullName} characters or fewer.`;
   else if (SSN_PATTERN.test(fullName)) errors.fullName = 'Please don’t include numbers like a Social Security number.';
-  else if (!NAME_PATTERN.test(fullName)) errors.fullName = 'Use letters, spaces, hyphens and apostrophes only.';
+  else if (!NAME_PATTERN.test(fullName)) errors.fullName = 'Use letters, spaces, hyphens, apostrophes, periods and commas only.';
 
   const email = values.email.trim();
   if (!email) errors.email = 'Enter your email address.';
@@ -181,7 +181,7 @@ export function validateInquiry(kind: InquiryKind, values: InquiryValues): Valid
       ? (values.licensingStatus as LicensingStatus)
       : null;
     if (!licensingStatus) errors.licensingStatus = 'Choose the option that describes your license status.';
-    if (!values.disclosureAck) errors.disclosureAck = 'Confirm that you’ve read the role disclosures above.';
+    if (!values.disclosureAck) errors.disclosureAck = 'Confirm that you’ve read the information about this work above.';
   }
 
   if (!values.consent) errors.consent = 'Check the box so we’re allowed to contact you. We can’t follow up without it.';

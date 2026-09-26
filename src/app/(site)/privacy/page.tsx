@@ -32,7 +32,11 @@ interface Section {
   readonly body: ReactNode;
 }
 
-/** Where privacy requests go: verified channels only, else the contact form. */
+/**
+ * Where privacy requests go: verified channels only. Without one, people reply
+ * to a message from us instead. The contact form is not offered then: it has
+ * no message box and would record a new consent.
+ */
 function RequestChannels() {
   const { email, mailingAddress } = FACTS.contact;
   const hasVerified = email !== null || mailingAddress !== null;
@@ -40,28 +44,35 @@ function RequestChannels() {
     <div className={styles.callout}>
       <h3>Privacy questions and requests</h3>
       {hasVerified ? (
-        <ul role="list" className={styles.channels}>
-          {email ? (
-            <li>
-              Email:{' '}
-              <a className="target" href={`mailto:${email.value}`}>
-                {email.value}
-              </a>
-            </li>
-          ) : null}
-          {mailingAddress ? <li>Mail: {mailingAddress.value}</li> : null}
-        </ul>
-      ) : null}
-      <p>
-        {hasVerified ? 'You can also use the contact form on this site. ' : 'Right now, the way to reach us is the contact form on this site. '}
-        It has no message box, so when a person on our team follows up, tell them you’re making a
-        privacy request. You can also reply to any email or text message we send you.
-      </p>
-      <p>
-        <Link href="/contact" className="btn btn--secondary">
-          Go to the contact form
-        </Link>
-      </p>
+        <>
+          <ul role="list" className={styles.channels}>
+            {email ? (
+              <li>
+                Email:{' '}
+                <a className="target" href={`mailto:${email.value}`}>
+                  {email.value}
+                </a>
+              </li>
+            ) : null}
+            {mailingAddress ? <li>Mail: {mailingAddress.value}</li> : null}
+          </ul>
+          <p>
+            You can also use the contact form on this site. It has no message box, so when a person
+            on our team follows up, tell them you’re making a privacy request. You can also reply to
+            any email or text message we send you.
+          </p>
+          <p>
+            <Link href="/contact" className="btn btn--secondary">
+              Go to the contact form
+            </Link>
+          </p>
+        </>
+      ) : (
+        <p>
+          Until a direct privacy contact is listed here, reply to any message from our team or tell
+          the person who contacts you, and say it’s a privacy request.
+        </p>
+      )}
     </div>
   );
 }
@@ -205,7 +216,9 @@ export default function PrivacyPage() {
           <p>
             We use service providers to host this website and our database. They store and process
             information for us so the site can work. Like any website host, the company that
-            delivers these pages receives your IP address when your browser connects to it.
+            delivers these pages receives your IP address when your browser connects to it. Our
+            hosting provider may keep records of these connections, including your IP address, in
+            its own logs under its own policies.
           </p>
           <p>
             An email service sends our team an alert when a new request arrives. The alert contains
@@ -256,6 +269,13 @@ export default function PrivacyPage() {
                 <td>{monthsLabel(RETENTION.notificationMonths)}</td>
               </tr>
               <tr>
+                <th scope="row">
+                  Our do-not-contact list, which holds only keyed hashes of the email address and
+                  phone number of people who asked us to stop contacting them
+                </th>
+                <td>{plural(RETENTION.suppressionYears, 'year')}</td>
+              </tr>
+              <tr>
                 <th scope="row">Anti-spam counters, which hold only keyed hashes</th>
                 <td>{plural(RETENTION.rateLimitDays, 'day')}</td>
               </tr>
@@ -265,6 +285,7 @@ export default function PrivacyPage() {
             If you ask us to delete your information, we delete it sooner. We may keep a minimal
             record that a deletion happened, without your contact details.
           </p>
+          <p>Deleted records can stay in our database provider’s backups until those backups are replaced.</p>
         </>
       ),
     },
@@ -286,9 +307,12 @@ export default function PrivacyPage() {
               described in <a href="#how-long-we-keep-it">How long we keep it</a>.
             </li>
             <li>
-              <strong>Stop contacting you.</strong> Reply STOP to any text message from us, or tell
-              us any other way: by email, on a call, or through the contact form. We’ll mark your
-              request so no one on our team contacts you again.
+              <strong>Stop contacting you.</strong> Reply STOP to any text from us, reply to any
+              email from us, or tell the person who calls you. We’ll mark your record “Do not
+              contact” so no one on our team contacts you about it. We also add a keyed hash of
+              your email address and phone number to our do-not-contact list. If you ask us to
+              delete your information too, that hash is the one thing we keep, so we can recognize
+              your details and not contact you again if they reach us later.
             </li>
           </ul>
           <p>
@@ -316,10 +340,10 @@ export default function PrivacyPage() {
               Everyone must sign in, and each person sees only what their role allows.
             </li>
             <li>
-              Staff passwords, sign-in tokens and IP addresses are stored only as one-way hashes,
-              never in their original form.
+              In our database, staff passwords, sign-in tokens and IP addresses are stored only as
+              one-way hashes, never in their original form.
             </li>
-            <li>Our system logs leave out personal details such as names, email addresses and phone numbers.</li>
+            <li>Our own application logs leave out personal details such as names, email addresses and phone numbers.</li>
             <li>Alert emails to our team carry a reference number, never your details.</li>
           </ul>
           <p>

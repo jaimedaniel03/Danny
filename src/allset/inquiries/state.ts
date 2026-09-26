@@ -17,6 +17,8 @@ interface Base {
 
 export type InquiryState =
   | (Base & { readonly status: 'idle' })
+  /** The site isn't taking inquiries yet (see src/allset/inquiries/gate.ts). */
+  | (Base & { readonly status: 'closed' })
   | (Base & { readonly status: 'invalid'; readonly errors: FieldErrors; readonly values: InquiryValues })
   | (Base & {
       readonly status: 'error';

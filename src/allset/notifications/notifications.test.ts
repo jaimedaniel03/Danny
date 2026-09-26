@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { db, describeDb, uniqueEmail } from '@/allset/testing/db';
 import { DeliveryError, setTransportForTests, type EmailTransport, type OutgoingEmail } from './transport';
-import { deliverPending, retryFailed } from './outbox';
+import { ALERTS_PER_HOUR_CAP, deliverPending, enqueueLeadAlerts, retryFailed } from './outbox';
 import { addRecipient, confirmRecipient } from './recipients';
 import { applyDeliveryEvent, verifySvixSignature } from './webhook';
 import { submitInquiry } from '@/allset/inquiries/submit';
@@ -53,7 +53,10 @@ describeDb('alerts', () => {
     await deliverPending(db());
     const confirmation = transport.sent.find((m) => m.to === address);
     expect(confirmation?.subject).toMatch(/Confirm/);
-    const token = new URL(confirmation!.text.match(/https?:\S+/)![0]).searchParams.get('token')!;
+    // The token rides in the fragment, which browsers never send to a server or a log.
+    const link = new URL(confirmation!.text.match(/https?:\S+/)![0]);
+    expect(link.search).toBe('');
+    const token = new URLSearchParams(link.hash.slice(1)).get('token')!;
 
     // Before confirming, a new lead queues nothing for this address.
     const before = await newLead();
@@ -131,6 +134,28 @@ describeDb('alerts', () => {
     const [row] = await db()<{ status: string; last_error: string }[]>`select status, last_error from allset.notifications where id = ${n!.id}`;
     expect(row).toMatchObject({ status: 'bounced', last_error: expect.stringMatching(/bounced/) });
     expect(await applyDeliveryEvent(db(), { type: 'email.delivered', data: { email_id: 'msg_unknown' } })).toBe('unknown_message');
+  });
+
+  it('stops queuing alert emails past the hourly ceiling, and records that it did', async () => {
+    const lead = await newLead();
+    class Rollback extends Error {}
+    // Done inside a transaction that is rolled back, so the flood is invisible to other tests.
+    await db()
+      .begin(async (tx) => {
+        const [recipient] = await tx<{ id: string }[]>`
+          insert into allset.notification_recipients (email, confirmed_at) values (${uniqueEmail('flood')}, now()) returning id`;
+        await tx`
+          insert into allset.notifications (kind, recipient_id, subject_ref)
+          select 'lead_received', ${recipient!.id}, 'ASC-0000-0000' from generate_series(1, ${ALERTS_PER_HOUR_CAP})`;
+        expect(await enqueueLeadAlerts(tx, lead.leadId, lead.reference)).toBe(0);
+        const [event] = await tx<{ details: Record<string, unknown> }[]>`
+          select details from allset.audit_events where action = 'alerts.throttled' and entity_ref = ${lead.reference}`;
+        expect(event?.details).toEqual({ cap: ALERTS_PER_HOUR_CAP });
+        throw new Rollback();
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof Rollback)) throw error;
+      });
   });
 });
 

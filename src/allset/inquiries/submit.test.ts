@@ -2,6 +2,7 @@ import { beforeEach, expect, it } from 'vitest';
 import { db, describeDb, uniqueEmail } from '@/allset/testing/db';
 import { submitInquiry, type SubmitContext } from './submit';
 import { consentWording } from './consent';
+import { suppress } from '@/allset/suppression';
 import type { ValidInquiry } from './fields';
 
 let ctxCounter = 0;
@@ -93,9 +94,62 @@ describeDb('saving an inquiry', () => {
     expect(second.leadId).toBe(first.leadId);
     expect(second.merged).toBe(true);
     expect(second.reference).not.toBe(first.reference);
-    const [lead] = await db()<{ submission_count: number; contact_method: string; phone_e164: string }[]>`
-      select submission_count, contact_method, phone_e164 from allset.leads where id = ${first.leadId}`;
-    expect(lead).toMatchObject({ submission_count: 2, contact_method: 'text', phone_e164: '+13125550199' });
+    // The lead keeps the details it was first given: someone who only knows an email address
+    // must not be able to redirect our calls. The difference is flagged for a person to check.
+    const [lead] = await db()<
+      { submission_count: number; contact_method: string; phone_e164: string | null; coverage_interest: string; needs_review: boolean }[]
+    >`
+      select submission_count, contact_method, phone_e164, coverage_interest, needs_review
+      from allset.leads where id = ${first.leadId}`;
+    expect(lead).toEqual({
+      submission_count: 2,
+      contact_method: 'email',
+      phone_e164: null,
+      coverage_interest: 'life',
+      needs_review: true,
+    });
+    // The new details are preserved on the inquiry itself, for staff to compare.
+    const [latest] = await db()<{ payload: Record<string, unknown> }[]>`
+      select payload from allset.inquiries where reference = ${second.reference}`;
+    expect(latest?.payload).toMatchObject({ contactMethod: 'text', phone: '+13125550199', coverageInterest: 'health' });
+  });
+
+  it('does not flag a repeat submission with the same details', async () => {
+    const email = uniqueEmail();
+    const first = await submitInquiry(db(), inquiry(email), crypto.randomUUID(), context);
+    const second = await submitInquiry(db(), inquiry(email), crypto.randomUUID(), context);
+    if (first.kind !== 'accepted' || second.kind !== 'accepted') throw new Error('expected accepted');
+    const [lead] = await db()<{ submission_count: number; needs_review: boolean }[]>`
+      select submission_count, needs_review from allset.leads where id = ${first.leadId}`;
+    expect(lead).toEqual({ submission_count: 2, needs_review: false });
+  });
+
+  it('flags a submission from someone on the do-not-contact list, still saving it', async () => {
+    const email = uniqueEmail('stop');
+    await suppress(db(), { emailNormalized: email.toLowerCase(), phoneE164: null }, null);
+    const outcome = await submitInquiry(db(), inquiry(email), crypto.randomUUID(), context);
+    if (outcome.kind !== 'accepted') throw new Error('expected accepted');
+    const [lead] = await db()<{ suppression_match: boolean }[]>`
+      select suppression_match from allset.leads where id = ${outcome.leadId}`;
+    expect(lead?.suppression_match).toBe(true);
+    const [event] = await db()<{ details: Record<string, unknown> }[]>`
+      select details from allset.audit_events where entity_ref = ${outcome.reference}`;
+    expect(event?.details).toMatchObject({ suppression_match: true });
+    expect(JSON.stringify(event?.details)).not.toContain(email);
+  });
+
+  it('matches the do-not-contact list by phone as well as email', async () => {
+    await suppress(db(), { emailNormalized: uniqueEmail('old'), phoneE164: '+13125550142' }, null);
+    const outcome = await submitInquiry(
+      db(),
+      inquiry(uniqueEmail('new'), { contactMethod: 'phone', phoneE164: '+13125550142' }),
+      crypto.randomUUID(),
+      context,
+    );
+    if (outcome.kind !== 'accepted') throw new Error('expected accepted');
+    const [lead] = await db()<{ suppression_match: boolean }[]>`
+      select suppression_match from allset.leads where id = ${outcome.leadId}`;
+    expect(lead?.suppression_match).toBe(true);
   });
 
   it('keeps coverage and team inquiries from the same person separate', async () => {

@@ -20,8 +20,9 @@ function buildHomeFaqs(): FaqItem[] {
       answer: (
         <>
           <p>
-            Maybe, maybe not. Coverage through an employer is often a set amount, commonly tied to
-            about a year&rsquo;s pay, and it usually ends when you leave the job. We look at what you
+            Maybe, maybe not. Coverage through an employer is often a set amount, such as a flat
+            dollar figure or a multiple of your pay. It usually ends when you leave the job, though
+            some plans let you keep it or convert it to a policy of your own. We look at what you
             already have first. Sometimes it is enough, and we will tell you so.
           </p>
         </>
@@ -38,9 +39,9 @@ function buildHomeFaqs(): FaqItem[] {
             your entire life and cost considerably more each month.
           </p>
           <p>
-            Some permanent policies build cash value, but it grows slowly, fees come out of it, and
-            borrowing against it reduces what your family receives. It is not a substitute for
-            savings.
+            Some permanent policies build cash value: money held inside the policy. It builds
+            slowly, fees come out of it, and in some policies it can go down. Loans you don&rsquo;t
+            pay back reduce what your family receives. It is not a substitute for savings.
           </p>
         </>
       ),
@@ -51,10 +52,11 @@ function buildHomeFaqs(): FaqItem[] {
       answer: (
         <>
           <p>
-            Then we start small, or we don&rsquo;t start at all. Depending on your income and state,
-            you may qualify for free or low-cost health coverage through Medicaid or CHIP (for
-            children), or for help lowering the premium on a Marketplace plan. When one of those fits
-            better than anything we could offer, we will point you to it.
+            Then we start small, or we don&rsquo;t start at all. Depending on your income, household
+            size and state, you may qualify for free or low-cost health coverage through Medicaid or
+            CHIP (for children, and in some states pregnant people), or for help lowering the premium
+            on a Marketplace plan. The rules differ by state and can change, so check with yours.
+            When one of those fits better than anything we could offer, we will point you to it.
           </p>
         </>
       ),
@@ -66,7 +68,7 @@ function buildHomeFaqs(): FaqItem[] {
         <>
           <p>
             Not on this website. Our forms never ask for medical history, Social Security numbers or
-            payment details. Some life insurance applications do ask health questions. If you decide
+            payment details. Life insurance applications usually ask health questions. If you decide
             to apply, those questions are part of the insurer&rsquo;s own application, and we will
             explain why each one is asked.
           </p>
@@ -104,15 +106,16 @@ function buildHomeFaqs(): FaqItem[] {
     },
   ];
 
-  const states = FACTS.serviceArea?.value.states;
-  if (FACTS.licenses.length > 0 && states) {
+  // Name only states with a license on record; the service area can be narrower, never wider.
+  const licensedStates = [...new Set(FACTS.licenses.map((l) => l.value.state))].sort();
+  if (licensedStates.length > 0) {
     items.push({
       id: 'licensed',
       question: 'Are you licensed in my state?',
       answer: (
         <p>
-          We are currently licensed to help families in {states.join(', ')}. License numbers are
-          listed at the bottom of every page.
+          We hold insurance licenses in {licensedStates.join(', ')}. The license numbers, and the
+          lines each one covers, are listed at the bottom of every page.
         </p>
       ),
     });

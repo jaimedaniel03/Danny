@@ -5,16 +5,19 @@ import type { Actor } from '@/allset/auth/roles';
 import { submitInquiry } from '@/allset/inquiries/submit';
 import {
   addNote,
+  applyInquiryDetails,
   assignLead,
   businessToday,
   dashboardCounts,
   deleteLead,
   getLead,
   listLeads,
+  markReviewed,
   setFollowUp,
   updateStatus,
 } from './repo';
 import { csvCell, exportLeads } from './export';
+import { isSuppressed } from '@/allset/suppression';
 
 async function makeUser(role: 'owner' | 'staff'): Promise<Actor> {
   const email = uniqueEmail(role);
@@ -171,5 +174,88 @@ describeDb('lead desk permissions', () => {
     expect(csvCell('=HYPERLINK("http://x")')).toBe(`"'=HYPERLINK(""http://x"")"`);
     expect(csvCell('+1 312')).toBe("'+1 312");
     expect(csvCell('plain')).toBe('plain');
+  });
+});
+
+describeDb('changed details and the do-not-contact list', () => {
+  let owner: Actor;
+  let alice: Actor;
+
+  beforeAll(async () => {
+    owner = await makeUser('owner');
+    alice = await makeUser('staff');
+  });
+
+  async function resubmit(email: string, phone: string): Promise<string> {
+    const outcome = await submitInquiry(
+      db(),
+      {
+        kind: 'coverage',
+        fullName: 'Jordan Rivera',
+        email,
+        emailNormalized: email.toLowerCase(),
+        zip: '73301',
+        contactMethod: 'text',
+        phoneE164: phone,
+        coverageInterest: 'health',
+        licensingStatus: null,
+        disclosureAck: false,
+      },
+      crypto.randomUUID(),
+      { ip: `repo2-${email}`, ipHash: 'h', userAgent: null, sourcePath: '/contact' },
+    );
+    if (outcome.kind !== 'accepted') throw new Error('not accepted');
+    const [row] = await db()<{ id: string }[]>`select id from allset.inquiries where reference = ${outcome.reference}`;
+    return row!.id;
+  }
+
+  it('keeps the original details until staff confirm the new ones', async () => {
+    const lead = await makeLead('changed');
+    const inquiryId = await resubmit(lead.email, '+13125550177');
+    let row = (await getLead(db(), owner, lead.id))?.lead;
+    expect(row).toMatchObject({ needsReview: true, contactMethod: 'email', phoneE164: null });
+
+    await expect(applyInquiryDetails(db(), alice, lead.id, inquiryId)).rejects.toThrow(/Assign this lead/);
+    await assignLead(db(), alice, lead.id, alice.id);
+    await applyInquiryDetails(db(), alice, lead.id, inquiryId);
+    row = (await getLead(db(), owner, lead.id))?.lead;
+    expect(row).toMatchObject({ needsReview: false, contactMethod: 'text', phoneE164: '+13125550177', coverageInterest: 'health' });
+    const [event] = await db()<{ action: string }[]>`
+      select action from allset.audit_events where entity_id = ${lead.id} and action = 'lead.details_updated'`;
+    expect(event?.action).toBe('lead.details_updated');
+  });
+
+  it('refuses to apply details from another lead’s request', async () => {
+    const lead = await makeLead('mine');
+    const other = await makeLead('theirs');
+    const foreign = await resubmit(other.email, '+13125550178');
+    await expect(applyInquiryDetails(db(), owner, lead.id, foreign)).rejects.toThrow(/isn’t part of this lead/);
+    await expect(applyInquiryDetails(db(), owner, lead.id, 'not-a-uuid')).rejects.toThrow(/Unknown request/);
+  });
+
+  it('can keep the original details and clear the flag', async () => {
+    const lead = await makeLead('keep');
+    await resubmit(lead.email, '+13125550179');
+    await markReviewed(db(), owner, lead.id);
+    expect((await getLead(db(), owner, lead.id))?.lead).toMatchObject({ needsReview: false, contactMethod: 'email' });
+  });
+
+  it('adds a lead marked "Do not contact" to the do-not-contact list', async () => {
+    const lead = await makeLead('stop');
+    await updateStatus(db(), owner, lead.id, 'do_not_contact');
+    expect(await isSuppressed(db(), { emailNormalized: lead.email.toLowerCase(), phoneE164: null })).toBe(true);
+  });
+
+  it('deletes without keeping anything unless asked to stop contact too', async () => {
+    const plain = await makeLead('forget');
+    await deleteLead(db(), owner, plain.id, plain.reference);
+    expect(await isSuppressed(db(), { emailNormalized: plain.email.toLowerCase(), phoneE164: null })).toBe(false);
+
+    const stop = await makeLead('forget-and-stop');
+    await deleteLead(db(), owner, stop.id, stop.reference, { suppress: true });
+    expect(await isSuppressed(db(), { emailNormalized: stop.email.toLowerCase(), phoneE164: null })).toBe(true);
+    const [event] = await db()<{ details: Record<string, unknown> }[]>`
+      select details from allset.audit_events where action = 'lead.deleted' and entity_id = ${stop.id}`;
+    expect(event?.details).toMatchObject({ added_to_do_not_contact: true });
   });
 });

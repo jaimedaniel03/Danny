@@ -52,7 +52,7 @@ export async function waitLikeAPerson(page: Page): Promise<void> {
 
 export async function fillCoverage(page: Page, input: CoverageInput): Promise<void> {
   await page.getByLabel('Full name').fill(input.name);
-  await page.getByLabel('Email address').fill(input.email);
+  await page.getByLabel('Email address', { exact: true }).fill(input.email);
   await page.getByLabel('ZIP code').fill(input.zip);
   await page.getByRole('radio', { name: input.interest, exact: true }).check();
   await page.getByRole('radio', { name: input.method, exact: true }).check();
@@ -61,8 +61,25 @@ export async function fillCoverage(page: Page, input: CoverageInput): Promise<vo
 }
 
 export async function referenceFromSuccess(page: Page): Promise<string> {
-  const text = await page.getByRole('status').filter({ hasText: 'We have your request' }).innerText();
+  const text = await page.getByRole('status').filter({ hasText: /We have your (request|inquiry)/ }).innerText();
   const match = text.match(/ASC-[0-9A-Z]{4}-[0-9A-Z]{4}/);
   if (!match) throw new Error(`No reference in: ${text}`);
   return match[0];
+}
+
+/**
+ * Search the lead desk the way staff do: through the form. The search text
+ * travels in a cookie, never the URL.
+ */
+export async function searchLeads(
+  page: Page,
+  q: string,
+  filters: { readonly status?: string; readonly assigned?: string } = {},
+): Promise<void> {
+  await page.goto('/admin/leads');
+  await page.getByLabel('Search').fill(q);
+  await page.getByLabel('Status').selectOption(filters.status ?? 'all');
+  if (filters.assigned) await page.getByLabel('Assigned', { exact: true }).selectOption(filters.assigned);
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await page.waitForURL(/\/admin\/leads\?.*search=1/);
 }

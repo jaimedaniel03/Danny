@@ -29,11 +29,21 @@ export const MAX_ATTEMPTS = BACKOFF_MINUTES.length + 1;
 const STALE_SENDING_MINUTES = 10;
 export const CONFIRMATION_TTL_HOURS = 72;
 
+/** Beyond this many new-inquiry alerts an hour, stop emailing: a flood of submissions must not flood inboxes or burn the email quota. Leads still save. */
+export const ALERTS_PER_HOUR_CAP = 60;
+
 export async function enqueueLeadAlerts(
   tx: TransactionSql,
   leadId: string,
   reference: string,
 ): Promise<number> {
+  const [recent] = await tx<{ n: number }[]>`
+    select count(*)::int as n from allset.notifications
+    where kind = 'lead_received' and created_at > now() - interval '1 hour'`;
+  if ((recent?.n ?? 0) >= ALERTS_PER_HOUR_CAP) {
+    await recordAudit(tx, { actor: null, action: 'alerts.throttled', entityType: 'lead', entityId: leadId, entityRef: reference, details: { cap: ALERTS_PER_HOUR_CAP } });
+    return 0;
+  }
   const rows = await tx`
     insert into allset.notifications (kind, lead_id, recipient_id, subject_ref)
     select 'lead_received', ${leadId}, r.id, ${reference}
@@ -96,7 +106,7 @@ async function compose(sql: Sql, row: ClaimedRow): Promise<OutgoingEmail> {
         'Someone on the All Set Check team added this address to receive an email when a new inquiry arrives.',
         '',
         `To start receiving alerts, confirm within ${CONFIRMATION_TTL_HOURS} hours:`,
-        `${base()}/admin/confirm-alert?token=${encodeURIComponent(token)}`,
+        `${base()}/admin/confirm-alert#token=${encodeURIComponent(token)}`,
         '',
         'If you did not expect this, ignore it and no alerts will be sent.',
       ].join('\n'),

@@ -151,3 +151,25 @@
   border-radius: 50%;
   background: var(--success);
 }
+
+.ackPoints {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.ackPoint {
+  position: relative;
+  padding-left: var(--space-4);
+}
+
+.ackPoint::before {
+  content: '';
+  position: absolute;
+  left: 0.15rem;
+  top: 0.62em;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--ink);
+}

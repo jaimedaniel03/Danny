@@ -110,6 +110,12 @@ create table allset.leads (
   assigned_to           uuid references allset.staff_users (id) on delete set null,
   follow_up_on          date,
   submission_count      integer not null default 1 check (submission_count >= 1),
+  -- A later submission arrived with different details. The lead keeps its
+  -- original contact details (a stranger who knows someone's email must not
+  -- be able to redirect our calls); staff compare and confirm.
+  needs_review          boolean not null default false,
+  -- The email or phone matches someone who asked not to be contacted.
+  suppression_match     boolean not null default false,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   last_submitted_at     timestamptz not null default now(),
@@ -181,7 +187,9 @@ create trigger inquiries_no_update
 create table allset.lead_notes (
   id                    uuid primary key default gen_random_uuid(),
   lead_id               uuid not null references allset.leads (id) on delete cascade,
-  author_id             uuid references allset.staff_users (id) on delete set null,
+  -- Staff accounts are anonymized, never deleted (see retention), so this
+  -- reference never needs to change on an immutable row.
+  author_id             uuid references allset.staff_users (id) on delete restrict,
   body                  text not null check (char_length(body) between 1 and 4000),
   created_at            timestamptz not null default now()
 );
@@ -201,8 +209,8 @@ create trigger lead_notes_no_update
 create table allset.audit_events (
   id                    bigint generated always as identity primary key,
   occurred_at           timestamptz not null default now(),
-  actor_id              uuid references allset.staff_users (id) on delete set null,
-  -- Snapshot, so the trail survives a staff account's deletion.
+  actor_id              uuid references allset.staff_users (id) on delete restrict,
+  -- Snapshot, so the trail reads correctly after an account is anonymized.
   actor_label           text,
   action                text not null check (char_length(action) <= 64),
   entity_type           text check (entity_type is null or char_length(entity_type) <= 32),
@@ -231,6 +239,22 @@ $$;
 create trigger audit_events_append_only
   before update or delete on allset.audit_events
   for each row execute function allset.audit_append_only();
+
+-- ── Do-not-contact list ─────────────────────────────────────────────────────
+--
+-- When someone asks us to stop, keyed hashes of their email and phone go here
+-- and outlive the lead itself (retention purges, deletion requests), so a
+-- later submission in their name is flagged before anyone reaches out.
+-- Hashes only: the list cannot be read back into contact details.
+
+create table allset.contact_suppressions (
+  value_hash            text primary key check (char_length(value_hash) <= 128),
+  kind                  text not null check (kind in ('email', 'phone')),
+  created_at            timestamptz not null default now(),
+  created_by            uuid references allset.staff_users (id) on delete set null
+);
+
+create index contact_suppressions_created_idx on allset.contact_suppressions (created_at);
 
 -- ── Abuse controls ──────────────────────────────────────────────────────────
 --
@@ -302,7 +326,8 @@ declare
 begin
   foreach t in array array[
     'staff_users', 'staff_sessions', 'leads', 'inquiries', 'lead_notes',
-    'audit_events', 'rate_limits', 'notification_recipients', 'notifications'
+    'audit_events', 'rate_limits', 'notification_recipients', 'notifications',
+    'contact_suppressions'
   ]
   loop
     execute format('alter table allset.%I enable row level security', t);

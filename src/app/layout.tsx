@@ -6,11 +6,12 @@ import { isLaunchReady } from '@/allset/content/facts';
 import '@/styles/tokens.css';
 import '@/styles/base.css';
 
+// Weight axis only. The optical-size axis more than doubles the file
+// (132 KB vs 58 KB) and it sits on the path to first paint.
 const serif = Newsreader({
   subsets: ['latin'],
   variable: '--font-newsreader',
   display: 'swap',
-  axes: ['opsz'],
 });
 
 const sans = Public_Sans({

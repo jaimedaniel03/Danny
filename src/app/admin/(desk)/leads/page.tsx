@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requireActor } from '@/allset/auth/session-cookie';
+import { readSearchTerm, requireActor } from '@/allset/auth/session-cookie';
+import { searchLeadsAction } from '@/allset/admin/actions';
 import { can } from '@/allset/auth/roles';
 import { db } from '@/allset/db/client';
 import { listAssignable } from '@/allset/auth/accounts';
@@ -16,11 +17,11 @@ interface Props {
   readonly searchParams: Promise<Params>;
 }
 
-function filtersFrom(params: Params): LeadFilters {
+function filtersFrom(params: Params, q: string | undefined): LeadFilters {
   const kind = params['kind'] === 'coverage' || params['kind'] === 'team' ? params['kind'] : undefined;
   const due = params['due'] === 'overdue' || params['due'] === 'today' || params['due'] === 'week' ? params['due'] : undefined;
   return {
-    q: params['q']?.slice(0, 100),
+    q,
     status: params['status']?.slice(0, 40),
     kind,
     assigned: params['assigned']?.slice(0, 64),
@@ -31,6 +32,7 @@ function filtersFrom(params: Params): LeadFilters {
 
 function query(params: Params, overrides: Params): string {
   const merged = { ...params, ...overrides };
+  delete merged['deleted'];
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(merged)) if (value) search.set(key, value);
   const text = search.toString();
@@ -40,7 +42,10 @@ function query(params: Params, overrides: Params): string {
 export default async function LeadsPage({ searchParams }: Props) {
   const actor = await requireActor('/admin/leads');
   const params = await searchParams;
-  const filters = filtersFrom(params);
+  // Search text comes from a cookie (never the URL), and only when this page
+  // was reached through a search.
+  const q = params['search'] === '1' ? await readSearchTerm() : undefined;
+  const filters = filtersFrom(params, q);
   const sql = db();
   const result = await listLeads(sql, actor, filters);
   const owner = can(actor, 'lead.viewAll');
@@ -50,7 +55,7 @@ export default async function LeadsPage({ searchParams }: Props) {
   return (
     <>
       <h1 className="admin-title">Leads</h1>
-      {params['deleted'] ? (
+      {params['deleted'] && /^ASC-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(params['deleted']) ? (
         <p className="notice notice--success" role="status">
           Lead {params['deleted']} and its records were permanently deleted.
         </p>
@@ -59,7 +64,7 @@ export default async function LeadsPage({ searchParams }: Props) {
         <p className="admin-sub">You see requests assigned to you and requests nobody has claimed yet.</p>
       ) : null}
 
-      <form method="get" className="panel filters" role="search" aria-label="Filter leads">
+      <form action={searchLeadsAction} className="panel filters" role="search" aria-label="Filter leads">
         <div className="field">
           <label className="field__label" htmlFor="f-q">
             Search
@@ -165,6 +170,18 @@ export default async function LeadsPage({ searchParams }: Props) {
                     <br />
                     <span className="muted">{lead.latestReference}</span>
                     {lead.submissionCount > 1 ? <span className="muted"> · sent {lead.submissionCount}×</span> : null}
+                    {lead.suppressionMatch ? (
+                      <>
+                        {' '}
+                        <span className="tag tag--dnc">Asked not to be contacted before</span>
+                      </>
+                    ) : null}
+                    {lead.needsReview ? (
+                      <>
+                        {' '}
+                        <span className="tag tag--new">Details changed</span>
+                      </>
+                    ) : null}
                   </td>
                   <td data-label="Kind">
                     {lead.kind === 'coverage'
