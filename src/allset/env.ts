@@ -46,10 +46,19 @@ export function appSecret(): string {
   return value;
 }
 
-/** Absolute origin used in emailed links, e.g. https://allsetcheck.com. */
+/**
+ * Absolute origin used in emailed links and metadata, e.g. https://allsetcheck.com.
+ * Set PUBLIC_BASE_URL for a real domain. Without it, a Vercel deployment uses
+ * its own address (the stable branch URL on previews) rather than localhost.
+ */
 export function publicBaseUrl(): string | undefined {
   const value = read('PUBLIC_BASE_URL');
-  return value?.replace(/\/+$/, '');
+  if (value) return value.replace(/\/+$/, '');
+  const host =
+    read('VERCEL_ENV') === 'production'
+      ? read('VERCEL_PROJECT_PRODUCTION_URL')
+      : (read('VERCEL_BRANCH_URL') ?? read('VERCEL_URL'));
+  return host ? `https://${host.replace(/^https?:\/\//, '').replace(/\/+$/, '')}` : undefined;
 }
 
 export function isProduction(): boolean {
