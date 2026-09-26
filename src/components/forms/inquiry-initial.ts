@@ -10,11 +10,13 @@ import type { InquiryState } from '@/allset/inquiries/state';
  * visitor would share one key.
  */
 export function initialInquiryState(kind: InquiryKind): InquiryState {
+  const open = inquiriesOpen();
   return {
     kind,
     idempotencyKey: crypto.randomUUID(),
-    formToken: issueFormToken(kind),
+    // A closed form renders no fields, so there is nothing to sign.
+    formToken: open ? issueFormToken(kind) : '',
     attempt: 0,
-    status: inquiriesOpen() ? 'idle' : 'closed',
+    status: open ? 'idle' : 'closed',
   };
 }

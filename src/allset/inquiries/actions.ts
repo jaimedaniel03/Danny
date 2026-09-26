@@ -37,7 +37,7 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
   // Closed before launch unless deliberately opened for a private preview.
   // Checked here, not only by hiding the form.
   if (!inquiriesOpen()) {
-    return { ...base, formToken: issueFormToken(kind), status: 'closed' };
+    return { ...base, formToken: '', status: 'closed' };
   }
 
   // Honeypot: a field people never see. Answer exactly as for a real success,
