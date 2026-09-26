@@ -31,6 +31,11 @@ export function databaseUrl(): string {
   return required('DATABASE_URL');
 }
 
+/** False on a deployment made before the database exists (public pages only). */
+export function databaseConfigured(): boolean {
+  return read('DATABASE_URL') !== undefined;
+}
+
 /**
  * Keys every HMAC in the app: hashed IPs, rate-limit keys, form tokens.
  * Rotating it resets rate limits and invalidates open forms; nothing else.

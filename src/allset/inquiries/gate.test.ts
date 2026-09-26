@@ -34,6 +34,12 @@ describe('the pre-launch gate', () => {
     expect(initialInquiryState('coverage').status).toBe('idle');
   });
 
+  it('stays closed without a database, even on a preview that allows inquiries', () => {
+    vi.stubEnv('ALLOW_PRELAUNCH_INQUIRIES', 'true');
+    vi.stubEnv('DATABASE_URL', '');
+    expect(inquiriesOpen()).toBe(false);
+  });
+
   it('refuses a posted form on the server, not just by hiding it', async () => {
     vi.stubEnv('ALLOW_PRELAUNCH_INQUIRIES', '');
     const previous = initialInquiryState('coverage');

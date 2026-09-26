@@ -5,14 +5,18 @@
  * not yet shown who it is (legal entity, licenses, contact). So forms are
  * open only when every launch-required fact is verified — or, for a private
  * pre-launch deployment that staff are testing behind access protection,
- * when ALLOW_PRELAUNCH_INQUIRIES=true is set deliberately.
+ * when ALLOW_PRELAUNCH_INQUIRIES=true is set deliberately. Never without a
+ * database.
  *
  * Enforced in the server action, not just by hiding the form.
  */
 
 import 'server-only';
 import { isLaunchReady } from '@/allset/content/facts';
+import { databaseConfigured } from '@/allset/env';
 
 export function inquiriesOpen(): boolean {
+  // Never open a form with nowhere to save what people send.
+  if (!databaseConfigured()) return false;
   return isLaunchReady() || process.env['ALLOW_PRELAUNCH_INQUIRIES'] === 'true';
 }
