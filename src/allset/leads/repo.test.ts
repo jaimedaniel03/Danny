@@ -37,6 +37,7 @@ async function makeLead(label = 'lead'): Promise<{ id: string; reference: string
       email,
       emailNormalized: email.toLowerCase(),
       zip: '73301',
+      state: 'TX',
       contactMethod: 'email',
       phoneE164: null,
       coverageInterest: 'life',
@@ -195,6 +196,7 @@ describeDb('changed details and the do-not-contact list', () => {
         email,
         emailNormalized: email.toLowerCase(),
         zip: '73301',
+        state: 'TX',
         contactMethod: 'text',
         phoneE164: phone,
         coverageInterest: 'health',
@@ -240,22 +242,34 @@ describeDb('changed details and the do-not-contact list', () => {
     expect((await getLead(db(), owner, lead.id))?.lead).toMatchObject({ needsReview: false, contactMethod: 'email' });
   });
 
-  it('adds a lead marked "Do not contact" to the do-not-contact list', async () => {
+  it('treats "Do not contact" as a withdrawal: records it, suppresses, and cancels queued alerts', async () => {
+    const [recipient] = await db()<{ id: string }[]>`
+      insert into allset.notification_recipients (email, confirmed_at, disabled_at) values (${uniqueEmail('dnc-alerts')}, now(), now()) returning id`;
     const lead = await makeLead('stop');
+    const [queued] = await db()<{ id: string }[]>`
+      insert into allset.notifications (kind, lead_id, recipient_id, subject_ref)
+      values ('lead_received', ${lead.id}, ${recipient!.id}, ${lead.reference}) returning id`;
     await updateStatus(db(), owner, lead.id, 'do_not_contact');
     expect(await isSuppressed(db(), { emailNormalized: lead.email.toLowerCase(), phoneE164: null })).toBe(true);
+    const [row] = await db()<{ consent_withdrawn_at: Date | null }[]>`select consent_withdrawn_at from allset.leads where id = ${lead.id}`;
+    expect(row?.consent_withdrawn_at).toBeInstanceOf(Date);
+    const [alert] = await db()<{ status: string }[]>`select status from allset.notifications where id = ${queued!.id}`;
+    expect(alert?.status).toBe('canceled');
+    const [basis] = await db()<{ basis: string }[]>`
+      select basis from allset.contact_suppressions where kind = 'email' order by created_at desc limit 1`;
+    expect(basis?.basis).toBe('explicit_opt_out');
   });
 
-  it('deletes without keeping anything unless asked to stop contact too', async () => {
+  it('keeps deletion and opt-out separate: deleting never adds to or removes from the do-not-contact list', async () => {
     const plain = await makeLead('forget');
     await deleteLead(db(), owner, plain.id, plain.reference);
     expect(await isSuppressed(db(), { emailNormalized: plain.email.toLowerCase(), phoneE164: null })).toBe(false);
 
+    // Someone who opted out, then asked for deletion: the existing entry stays.
     const stop = await makeLead('forget-and-stop');
-    await deleteLead(db(), owner, stop.id, stop.reference, { suppress: true });
+    await updateStatus(db(), owner, stop.id, 'do_not_contact');
+    await deleteLead(db(), owner, stop.id, stop.reference);
     expect(await isSuppressed(db(), { emailNormalized: stop.email.toLowerCase(), phoneE164: null })).toBe(true);
-    const [event] = await db()<{ details: Record<string, unknown> }[]>`
-      select details from allset.audit_events where action = 'lead.deleted' and entity_id = ${stop.id}`;
-    expect(event?.details).toMatchObject({ added_to_do_not_contact: true });
+    expect(await db()`select 1 from allset.leads where id = ${stop.id}`).toHaveLength(0);
   });
 });

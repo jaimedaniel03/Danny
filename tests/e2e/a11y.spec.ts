@@ -5,7 +5,7 @@
 
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { PUBLIC_ROUTES } from './helpers';
+import { PUBLIC_ROUTES, TESTER_STATE } from './helpers';
 
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
 
@@ -41,15 +41,52 @@ test('axe: the open mobile menu, open FAQs, and a form with errors', async ({ pa
   }
   await axe(page, 'faqs open');
 
+  // The closed notice the public sees before launch.
   await page.goto('/contact');
-  await page.waitForTimeout(2200);
-  await page.getByRole('button', { name: 'Send my request' }).click();
-  await expect(page.getByText(/things to fix/)).toBeVisible();
-  await axe(page, 'contact with errors');
+  await axe(page, 'contact closed');
+});
+
+test.describe('forms (as the preview tester)', () => {
+  test.use({ storageState: TESTER_STATE });
+
+  test('axe: the open form with errors', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/contact');
+    await page.waitForTimeout(2200);
+    await page.getByRole('button', { name: 'Send my request' }).click();
+    await expect(page.getByText(/things to fix/)).toBeVisible();
+    await axe(page, 'contact with errors');
+  });
+
+  test('keyboard: the whole coverage form can be completed without a mouse', async ({ page }) => {
+    await page.setExtraHTTPHeaders({ 'x-real-ip': '10.250.250.1' });
+    await page.goto('/contact');
+    await page.waitForTimeout(2200);
+    await page.getByLabel('Full name').focus();
+    await page.keyboard.type('Key Board');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type(`keyboard.${Date.now()}@example.com`);
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('33101');
+    await page.keyboard.press('Tab'); // state
+    await page.keyboard.type('Florida');
+    await expect(page.getByLabel('State', { exact: true })).toHaveValue('FL');
+    await page.keyboard.press('Tab'); // interest radio group
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Tab'); // contact method radio group
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Tab'); // consent checkbox
+    await page.keyboard.press('Space');
+    await expect(page.locator('#inquiry-consent')).toBeChecked();
+    await page.keyboard.press('Tab'); // privacy link
+    await page.keyboard.press('Tab'); // submit
+    await page.keyboard.press('Enter');
+    await expect(page.getByText(/We have your request/)).toBeVisible();
+  });
 });
 
 test('axe: sign-in and setup pages', async ({ page }) => {
-  for (const path of ['/admin/login', '/admin/setup', '/admin/invite#token=nope', '/admin/confirm-alert#token=nope']) {
+  for (const path of ['/admin/login', '/admin/login/verify', '/admin/setup', '/admin/invite#token=nope', '/admin/confirm-alert#token=nope']) {
     await page.goto(path);
     await axe(page, path);
   }
@@ -128,29 +165,6 @@ test('keyboard: every focusable control shows a visible focus indicator', async 
     if (info && !info.visible) missing.push(info.label);
   }
   expect(missing).toEqual([]);
-});
-
-test('keyboard: the whole coverage form can be completed without a mouse', async ({ page }) => {
-  await page.setExtraHTTPHeaders({ 'x-real-ip': '10.250.250.1' });
-  await page.goto('/contact');
-  await page.waitForTimeout(2200);
-  await page.getByLabel('Full name').focus();
-  await page.keyboard.type('Key Board');
-  await page.keyboard.press('Tab');
-  await page.keyboard.type(`keyboard.${Date.now()}@example.com`);
-  await page.keyboard.press('Tab');
-  await page.keyboard.type('33101');
-  await page.keyboard.press('Tab'); // interest radio group
-  await page.keyboard.press('Space');
-  await page.keyboard.press('Tab'); // contact method radio group
-  await page.keyboard.press('Space');
-  await page.keyboard.press('Tab'); // consent checkbox
-  await page.keyboard.press('Space');
-  await expect(page.locator('#inquiry-consent')).toBeChecked();
-  await page.keyboard.press('Tab'); // privacy link
-  await page.keyboard.press('Tab'); // submit
-  await page.keyboard.press('Enter');
-  await expect(page.getByText(/We have your request/)).toBeVisible();
 });
 
 test('scroll reveals run once and never hide content above the fold', async ({ page }) => {

@@ -27,15 +27,30 @@ import {
   issuePasswordReset,
   setActive,
   setRole,
+  recordSignedIn,
   signIn,
 } from '@/allset/auth/accounts';
+import {
+  confirmEnrollment,
+  createChallenge,
+  regenerateRecoveryCodes,
+  rememberDevice,
+  resetMfa,
+  startEnrollment,
+  verifyChallenge,
+} from '@/allset/auth/mfa';
 import { createSession, revokeAllSessions, revokeSession } from '@/allset/auth/sessions';
 import {
   actorForAction,
+  clearMfaCookie,
   clearSessionCookie,
+  readDeviceToken,
+  readMfaToken,
   readSessionToken,
   safeReturnPath,
   SEARCH_COOKIE,
+  setDeviceCookie,
+  setMfaCookie,
   setSessionCookie,
 } from '@/allset/auth/session-cookie';
 import { cookies } from 'next/headers';
@@ -68,38 +83,115 @@ function explain(error: unknown, event: string): ActionState {
   return fail('Something went wrong and nothing was changed. Try again, and tell an owner if it keeps happening.');
 }
 
-async function startSession(staffId: string): Promise<void> {
+async function startSession(staffId: string, mfaVerified: boolean): Promise<void> {
   const ctx = await requestContext();
-  const session = await createSession(db(), staffId, { ipHash: ctx.ipHash, userAgent: ctx.userAgent });
+  const session = await createSession(db(), staffId, { ipHash: ctx.ipHash, userAgent: ctx.userAgent, mfaVerified });
   await setSessionCookie(session.token, session.expiresAt);
+}
+
+function tryAgainIn(seconds: number | undefined): string {
+  const minutes = Math.max(1, Math.ceil((seconds ?? 900) / 60));
+  return `about ${minutes} minute${minutes === 1 ? '' : 's'}`;
 }
 
 // ── Sign-in, setup, invites ──────────────────────────────────────────────
 
+/** Step one: the password. A right one leads to the code step (or, for a new account, to setting it up). */
 export async function signInAction(_previous: ActionState, form: FormData): Promise<ActionState> {
   const email = text(form, 'email', 254).trim();
   const password = text(form, 'password', 256);
   const next = safeReturnPath(text(form, 'next', 300));
   if (!email || !password) return fail('Enter your email and password.');
 
-  let staffId: string;
+  let destination: string;
   try {
     const ctx = await requestContext();
-    const result = await signIn(db(), email, password, { ip: ctx.ip });
+    const result = await signIn(db(), email, password, { ip: ctx.ip, deviceToken: await readDeviceToken() });
     if (!result.ok) {
-      if (result.reason === 'throttled') {
-        const minutes = Math.ceil((result.retryAfterSeconds ?? 900) / 60);
-        // One message for a locked account and a throttled connection alike.
-        return fail(`Too many sign-in attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`);
-      }
+      // One generic message whichever limit applied, and one for any wrong combination.
+      if (result.reason === 'throttled') return fail(`Too many sign-in attempts. Try again in ${tryAgainIn(result.retryAfterSeconds)}.`);
       return fail('That email and password don’t match an active account.');
     }
-    staffId = result.staffId;
-    await startSession(staffId);
+    if (result.next === 'mfa') {
+      const challenge = await createChallenge(db(), result.staffId, result.deviceId);
+      await setMfaCookie(challenge.token, challenge.expiresAt);
+      destination = `/admin/login/verify?next=${encodeURIComponent(next)}`;
+    } else {
+      // A brand-new account: this session can reach only the setup page.
+      await startSession(result.staffId, false);
+      destination = '/admin/two-step';
+    }
   } catch (error) {
     return explain(error, 'admin.sign_in_failed');
   }
-  redirect(next);
+  redirect(destination);
+}
+
+/** Step two: a code from the authenticator app, or a one-time recovery code. */
+export async function verifyCodeAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  const next = safeReturnPath(text(form, 'next', 300));
+  const code = text(form, 'code', 20);
+  const recoveryCode = text(form, 'recoveryCode', 40);
+  if (!code.trim() && !recoveryCode.trim()) return fail('Enter the 6-digit code from your authenticator app, or a recovery code.');
+  let destination = next;
+  try {
+    const token = await readMfaToken();
+    const result = await verifyChallenge(db(), token ?? '', { code, recoveryCode });
+    if (!result.ok) {
+      if (result.reason === 'expired') {
+        await clearMfaCookie();
+        return fail('This sign-in has expired. Start again with your email and password.', { secret: 'expired' });
+      }
+      if (result.reason === 'throttled') return fail(`Too many attempts. Try again in ${tryAgainIn(result.retryAfterSeconds)}.`);
+      return fail(recoveryCode.trim() ? 'That recovery code isn’t valid or was already used.' : 'That code isn’t right. Use the newest code from your app.');
+    }
+    await clearMfaCookie();
+    await startSession(result.staffId, true);
+    const device = await rememberDevice(db(), result.staffId, await readDeviceToken());
+    await setDeviceCookie(device.token, device.expiresAt);
+    await recordSignedIn(db(), result.staffId, { usedRecoveryCode: result.usedRecoveryCode });
+    if (result.usedRecoveryCode) destination = `/admin/two-step?recovery_used=${result.recoveryCodesLeft ?? 0}`;
+  } catch (error) {
+    return explain(error, 'admin.verify_code_failed');
+  }
+  redirect(destination);
+}
+
+/** Two-step setup: begin (or restart). */
+export async function startEnrollmentAction(_previous?: ActionState, _form?: FormData): Promise<ActionState> {
+  try {
+    const actor = await actorForAction({ allowUnverified: true });
+    await startEnrollment(db(), actor);
+  } catch (error) {
+    return explain(error, 'admin.mfa_start_failed');
+  }
+  revalidatePath('/admin/two-step');
+  return ok('Scan the code, then enter the 6-digit code your app shows.');
+}
+
+/** Two-step setup: finish with a code. Recovery codes come back once. */
+export async function confirmEnrollmentAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const actor = await actorForAction({ allowUnverified: true });
+    const result = await confirmEnrollment(db(), actor, text(form, 'code', 20));
+    if (!result.ok) return fail(result.error, { fieldErrors: { code: result.error } });
+    // No cookie is set here: setting one makes Next.js re-render the page,
+    // which would drop the recovery codes before anyone could save them. The
+    // browser is remembered at its next full sign-in instead.
+    return ok('Two-step sign-in is on. Save these recovery codes now; they won’t be shown again.', { codes: result.recoveryCodes });
+  } catch (error) {
+    return explain(error, 'admin.mfa_confirm_failed');
+  }
+}
+
+export async function regenerateRecoveryCodesAction(_previous?: ActionState, _form?: FormData): Promise<ActionState> {
+  try {
+    const actor = await actorForAction();
+    const codes = await regenerateRecoveryCodes(db(), actor);
+    return ok('New recovery codes. The old ones no longer work. Save these now; they won’t be shown again.', { codes });
+  } catch (error) {
+    return explain(error, 'admin.recovery_codes_failed');
+  }
 }
 
 export async function signOutAction(): Promise<void> {
@@ -155,11 +247,12 @@ export async function setupAction(_previous: ActionState, form: FormData): Promi
       password: text(form, 'password', 256),
     });
     if (!result.ok) return fail('Check the highlighted fields.', { fieldErrors: result.errors });
-    await startSession(result.value.staffId);
+    // The new owner sets up two-step sign-in before anything else.
+    await startSession(result.value.staffId, false);
   } catch (error) {
     return explain(error, 'admin.setup_failed');
   }
-  redirect('/admin');
+  redirect('/admin/two-step');
 }
 
 export async function acceptInviteAction(_previous: ActionState, form: FormData): Promise<ActionState> {
@@ -167,14 +260,21 @@ export async function acceptInviteAction(_previous: ActionState, form: FormData)
   if (password !== text(form, 'confirm', 256)) {
     return fail('The two passwords don’t match.', { fieldErrors: { confirm: 'The two passwords don’t match.' } });
   }
+  let destination: string;
   try {
     const result = await acceptInvite(db(), text(form, 'token', 200), password);
     if (!result.ok) return fail('Check the highlighted fields.', { fieldErrors: result.errors });
-    await startSession(result.value.staffId);
+    if (result.value.mfaEnabled) {
+      // A reset never skips the second step: sign in with the new password and a code.
+      destination = '/admin/login?password_set=1';
+    } else {
+      await startSession(result.value.staffId, false);
+      destination = '/admin/two-step';
+    }
   } catch (error) {
     return explain(error, 'admin.accept_invite_failed');
   }
-  redirect('/admin');
+  redirect(destination);
 }
 
 export async function confirmRecipientAction(_previous: ActionState, form: FormData): Promise<ActionState> {
@@ -253,9 +353,7 @@ export async function deleteLeadAction(_previous: ActionState, form: FormData): 
   let reference: string;
   try {
     const actor = await actorForAction();
-    ({ reference } = await deleteLead(db(), actor, id, text(form, 'confirmation', 40), {
-      suppress: form.get('suppress') === 'yes',
-    }));
+    ({ reference } = await deleteLead(db(), actor, id, text(form, 'confirmation', 40)));
     revalidatePath('/admin/leads');
   } catch (error) {
     return explain(error, 'admin.delete_failed');
@@ -333,6 +431,19 @@ export async function resetPasswordAction(_previous: ActionState, form: FormData
   } catch (error) {
     return explain(error, 'admin.reset_failed');
   }
+}
+
+// The button's own form disappears once two-step sign-in is off, so the
+// confirmation is shown (and announced) by the page.
+export async function resetMfaAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  try {
+    const actor = await actorForAction();
+    await resetMfa(db(), actor, text(form, 'staffId', 64));
+  } catch (error) {
+    return explain(error, 'admin.mfa_reset_failed');
+  }
+  revalidatePath('/admin/team');
+  redirect('/admin/team?notice=mfa-reset');
 }
 
 export async function roleAction(_previous: ActionState, form: FormData): Promise<ActionState> {

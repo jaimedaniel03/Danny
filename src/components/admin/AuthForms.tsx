@@ -11,10 +11,14 @@ import { useFormStatus } from 'react-dom';
 import type { ActionState } from '@/allset/admin/action-state';
 import {
   acceptInviteAction,
+  confirmEnrollmentAction,
   confirmRecipientAction,
   inviteInfoAction,
+  regenerateRecoveryCodesAction,
   setupAction,
   signInAction,
+  startEnrollmentAction,
+  verifyCodeAction,
 } from '@/allset/admin/actions';
 
 /**
@@ -196,6 +200,147 @@ export function ConfirmAlertForm() {
       <Problem state={state} />
       <input type="hidden" name="token" value={token} />
       <SubmitButton label="Yes, send me new-inquiry alerts" pending="Confirming…" />
+    </form>
+  );
+}
+
+/** Sign-in step two: the code from the authenticator app, or a recovery code. */
+export function VerifyCodeForm({ next }: { readonly next: string }) {
+  const [state, action] = useActionState(verifyCodeAction, IDLE);
+  if (state.status === 'error' && state.secret === 'expired') {
+    return (
+      <div className="stack">
+        <Problem state={state} />
+        <p>
+          <a className="btn btn--primary" href="/admin/login">
+            Sign in again
+          </a>
+        </p>
+      </div>
+    );
+  }
+  return (
+    <form action={action} className="stack" noValidate>
+      <Problem state={state} />
+      <input type="hidden" name="next" value={next} />
+      <div className="field">
+        <label className="field__label" htmlFor="verify-code">
+          6-digit code
+        </label>
+        <p className="field__hint" id="verify-code-hint">
+          From the authenticator app you set up for the lead desk.
+        </p>
+        <input
+          id="verify-code"
+          name="code"
+          className="input input--code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={8}
+          aria-describedby="verify-code-hint"
+        />
+      </div>
+      <details className="disclosure">
+        <summary>Use a recovery code instead</summary>
+        <div className="field">
+          <label className="field__label" htmlFor="verify-recovery">
+            Recovery code
+          </label>
+          <p className="field__hint" id="verify-recovery-hint">
+            One of the codes you saved when you set up two-step sign-in, like ABCDE-FGH23. Each works once.
+          </p>
+          <input
+            id="verify-recovery"
+            name="recoveryCode"
+            className="input"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            maxLength={20}
+            aria-describedby="verify-recovery-hint"
+          />
+        </div>
+      </details>
+      <SubmitButton label="Verify and sign in" pending="Checking…" />
+    </form>
+  );
+}
+
+function RecoveryCodes({ codes }: { readonly codes: readonly string[] }) {
+  return (
+    <div className="stack">
+      <ol className="recovery-codes" aria-label="Recovery codes">
+        {codes.map((code) => (
+          <li key={code}>
+            <code>{code}</code>
+          </li>
+        ))}
+      </ol>
+      <p className="fine-print">
+        Keep them somewhere safe and private, like a password manager. Each code works once, if you lose
+        your phone.
+      </p>
+    </div>
+  );
+}
+
+export function StartEnrollmentForm({ label }: { readonly label: string }) {
+  const [state, action] = useActionState(startEnrollmentAction, IDLE);
+  return (
+    <form action={action} className="stack">
+      {state.status === 'error' ? <Problem state={state} /> : null}
+      <SubmitButton label={label} pending="Preparing…" />
+    </form>
+  );
+}
+
+/** Setup step: the code proves the app has the secret; recovery codes come back once. */
+export function ConfirmEnrollmentForm() {
+  const [state, action] = useActionState(confirmEnrollmentAction, IDLE);
+  if (state.status === 'ok' && state.codes) {
+    return (
+      <div className="stack">
+        <Problem state={state} />
+        <RecoveryCodes codes={state.codes} />
+        <p>
+          <a className="btn btn--primary" href="/admin">
+            I’ve saved them — continue to the lead desk
+          </a>
+        </p>
+      </div>
+    );
+  }
+  const error = state.fieldErrors?.['code'];
+  return (
+    <form action={action} className="stack" noValidate>
+      <Problem state={state} />
+      <Field
+        id="enroll-code"
+        name="code"
+        label="6-digit code from the app"
+        autoComplete="one-time-code"
+        hint="Enter the code your app shows now. It changes every 30 seconds."
+        error={error}
+      />
+      <SubmitButton label="Turn on two-step sign-in" pending="Checking…" />
+    </form>
+  );
+}
+
+export function RegenerateCodesForm() {
+  const [state, action] = useActionState(regenerateRecoveryCodesAction, IDLE);
+  if (state.status === 'ok' && state.codes) {
+    return (
+      <div className="stack">
+        <Problem state={state} />
+        <RecoveryCodes codes={state.codes} />
+      </div>
+    );
+  }
+  return (
+    <form action={action} className="stack">
+      <Problem state={state} />
+      <SubmitButton label="Make new recovery codes" pending="Making…" />
     </form>
   );
 }

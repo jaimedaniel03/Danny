@@ -18,6 +18,7 @@ import { verifyConsentToken, maskPhoneForDisplay } from '@/consent/tokens';
 import { renderDisclosure } from '@/consent/disclosure-text';
 import { loadProfileSafe } from '@/config/agency';
 import { ConsentForm } from './consent-form';
+import styles from './consent.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,12 +40,12 @@ export default async function ConsentPage({ params }: PageProps) {
 
   if (!verdict.valid) {
     return (
-      <main style={styles.main}>
-        <div style={styles.card}>
-          <h1 style={styles.h1}>
+      <main className={styles.main}>
+        <div className={styles.card}>
+          <h1 className={styles.h1}>
             {verdict.reason === 'expired' ? 'This link has expired' : 'This link isn’t valid'}
           </h1>
-          <p style={styles.body}>
+          <p className={styles.body}>
             {verdict.reason === 'expired'
               ? 'Links stay active for two weeks. Give us a call and we’ll send you a fresh one.'
               : 'Double-check the link from your message, or give us a call and we’ll sort it out.'}
@@ -73,11 +74,11 @@ export default async function ConsentPage({ params }: PageProps) {
   }
 
   return (
-    <main style={styles.main}>
-      <div style={styles.card}>
-        <p style={styles.eyebrow}>{agencyLegalName}</p>
-        <h1 style={styles.h1}>Okay a follow-up call</h1>
-        <p style={styles.body}>
+    <main className={styles.main}>
+      <div className={styles.card}>
+        <p className={styles.eyebrow}>{agencyLegalName}</p>
+        <h1 className={styles.h1}>Okay a follow-up call</h1>
+        <p className={styles.body}>
           You asked us to get back to you at{' '}
           <strong>{maskPhoneForDisplay(verdict.payload.phoneE164)}</strong>. We just need your
           okay before we do.
@@ -93,41 +94,3 @@ export default async function ConsentPage({ params }: PageProps) {
     </main>
   );
 }
-
-const styles = {
-  main: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    padding: '2rem 1rem 4rem',
-    background: '#f5f7fa',
-    color: '#15181e',
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-    lineHeight: 1.6,
-  },
-  card: {
-    maxWidth: '34rem',
-    width: '100%',
-    background: '#ffffff',
-    border: '1px solid #dde3eb',
-    borderRadius: '6px',
-    padding: '2rem 1.75rem 2.25rem',
-  },
-  eyebrow: {
-    margin: '0 0 0.75rem',
-    fontSize: '0.75rem',
-    letterSpacing: '0.12em',
-    textTransform: 'uppercase' as const,
-    color: '#626d7d',
-    fontWeight: 600,
-  },
-  h1: {
-    margin: '0 0 1rem',
-    fontSize: '1.6rem',
-    lineHeight: 1.2,
-    letterSpacing: '-0.01em',
-  },
-  body: { margin: '0 0 1.5rem', fontSize: '1rem', color: '#3d4653' },
-} as const;

@@ -1,16 +1,27 @@
 import type { Metadata } from 'next';
 import { requireOwnerPage } from '@/allset/auth/session-cookie';
+import { FlashStatus } from '@/components/admin/FlashStatus';
 import { db } from '@/allset/db/client';
 import { listStaff } from '@/allset/auth/accounts';
 import { ActionForm, Submit } from '@/components/admin/ActionForm';
 import { SecretForm } from '@/components/admin/SecretResult';
 import { formatDateTime } from '@/components/admin/format';
-import { activeAction, inviteAction, resetPasswordAction, roleAction } from '@/allset/admin/actions';
+import { activeAction, inviteAction, resetMfaAction, resetPasswordAction, roleAction } from '@/allset/admin/actions';
 
 export const metadata: Metadata = { title: 'Team' };
 
-export default async function TeamPage() {
+const NOTICES: Record<string, string> = {
+  'mfa-reset': 'Two-step sign-in was reset. They were signed out everywhere and will set it up again at their next sign-in.',
+};
+
+interface Props {
+  readonly searchParams: Promise<{ notice?: string | string[] }>;
+}
+
+export default async function TeamPage({ searchParams }: Props) {
   const actor = await requireOwnerPage('staff.manage', '/admin/team');
+  const { notice } = await searchParams;
+  const noticeText = typeof notice === 'string' ? NOTICES[notice] : undefined;
   const staff = await listStaff(db(), actor);
 
   return (
@@ -20,6 +31,7 @@ export default async function TeamPage() {
         Owners manage accounts, alerts, exports and deletions. Staff see requests assigned to them and
         requests nobody has claimed. Every change here is recorded in the audit log.
       </p>
+      {noticeText ? <FlashStatus message={noticeText} /> : null}
 
       <section className="panel" aria-labelledby="invite-title">
         <h2 id="invite-title" className="panel__title">
@@ -81,6 +93,8 @@ export default async function TeamPage() {
                   <dd>
                     {!member.isActive ? 'Deactivated' : member.pendingInvite ? 'Invited — hasn’t set a password yet' : 'Active'}
                   </dd>
+                  <dt>Two-step sign-in</dt>
+                  <dd>{member.mfaEnabled ? 'On' : 'Not set up yet (required at next sign-in)'}</dd>
                   <dt>Last sign-in</dt>
                   <dd>{member.lastLoginAt ? formatDateTime(member.lastLoginAt) : 'Never'}</dd>
                   <dt>Open leads</dt>
@@ -103,6 +117,14 @@ export default async function TeamPage() {
                             </button>
                           </div>
                         </SecretForm>
+                        {member.mfaEnabled ? (
+                          <ActionForm action={resetMfaAction} aria-label={`Reset two-step sign-in for ${member.displayName}`}>
+                            <input type="hidden" name="staffId" value={member.id} />
+                            <Submit variant="secondary" pendingLabel="Resetting…">
+                              Reset two-step sign-in
+                            </Submit>
+                          </ActionForm>
+                        ) : null}
                         <ActionForm action={activeAction} aria-label={`Deactivate ${member.displayName}`}>
                           <input type="hidden" name="staffId" value={member.id} />
                           <input type="hidden" name="active" value="false" />

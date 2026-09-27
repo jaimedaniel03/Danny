@@ -29,7 +29,13 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } } },
+    // Signs in the synthetic preview tester the form tests run as.
+    { name: 'setup', testMatch: /.*\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'desktop',
+      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } },
+    },
   ],
   ...(process.env.E2E_BASE_URL
     ? {}

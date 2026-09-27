@@ -414,3 +414,86 @@
   background: var(--paper-3);
   color: var(--ink-muted);
 }
+
+.panel--narrow {
+  max-width: 36rem;
+}
+
+.inline-form__grow {
+  flex: 1 1 16rem;
+}
+
+.admin-bar__brand {
+  gap: 0.5rem;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+/* ── Two-step sign-in ─────────────────────────────────────────────────── */
+
+.auth-card--wide {
+  max-width: 36rem;
+}
+
+.input--code {
+  max-width: 12rem;
+  font-size: var(--step-1);
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.disclosure > summary {
+  cursor: pointer;
+  min-height: var(--target);
+  display: inline-flex;
+  align-items: center;
+  color: var(--coral-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.disclosure[open] > summary {
+  margin-bottom: var(--space-3);
+}
+
+.steps-list {
+  padding-left: var(--space-5);
+}
+
+.steps-list > li + li {
+  margin-top: var(--space-6);
+}
+
+.steps-list > li > * + * {
+  margin-top: var(--space-3);
+}
+
+.qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+}
+
+.secret-key,
+.recovery-codes code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  word-break: break-all;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-7);
+  background: var(--paper-2);
+  border: 1px dashed var(--field-edge);
+  border-radius: var(--radius-sm);
+}
+
+.evidence {
+  list-style: none;
+  padding: 0;
+  margin-top: var(--space-2);
+}

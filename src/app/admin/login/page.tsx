@@ -7,13 +7,14 @@ import { currentActor, safeReturnPath } from '@/allset/auth/session-cookie';
 export const metadata: Metadata = { title: 'Sign in' };
 
 interface Props {
-  readonly searchParams: Promise<{ next?: string; signed_out?: string }>;
+  readonly searchParams: Promise<{ next?: string; signed_out?: string; password_set?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: Props) {
   const params = await searchParams;
   const next = safeReturnPath(params.next);
-  if (await currentActor()) redirect(next);
+  const signedIn = await currentActor();
+  if (signedIn) redirect(signedIn.mfaVerified ? next : '/admin/two-step');
 
   return (
     <main id="main" className="container">
@@ -24,6 +25,10 @@ export default async function LoginPage({ searchParams }: Props) {
           <p role="alert" className="notice notice--error">
             You’re signed out on this device, but we couldn’t end the session on our server. Sign in
             and choose “Sign out other devices”, or tell an owner.
+          </p>
+        ) : params.password_set ? (
+          <p role="status" className="notice notice--success">
+            Your new password is set. Sign in with it, then enter the code from your authenticator app.
           </p>
         ) : params.signed_out ? (
           <p role="status" className="notice notice--success">

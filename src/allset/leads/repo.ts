@@ -11,6 +11,8 @@ import { recordAudit, type AuditActor } from '@/allset/audit';
 import { businessTimeZone } from '@/allset/env';
 import { canAssign, canEditLead, canViewLead, can, PermissionError, type Actor } from '@/allset/auth/roles';
 import { suppress } from '@/allset/suppression';
+import { cancelLeadAlerts } from '@/allset/notifications/outbox';
+import { isStateCode } from '@/allset/content/states';
 import { CONTACT_METHODS, COVERAGE_INTERESTS, LICENSING_STATUSES, normalizeUsPhone, normalizeZip } from '@/allset/inquiries/fields';
 
 export const LEAD_STATUSES = [
@@ -75,6 +77,7 @@ export interface LeadRow {
   readonly fullName: string;
   readonly email: string;
   readonly zip: string;
+  readonly state: string;
   readonly contactMethod: 'email' | 'phone' | 'text';
   readonly phoneE164: string | null;
   readonly coverageInterest: string | null;
@@ -89,6 +92,8 @@ export interface LeadRow {
   readonly latestReference: string | null;
   readonly needsReview: boolean;
   readonly suppressionMatch: boolean;
+  readonly isSynthetic: boolean;
+  readonly consentWithdrawnAt: Date | null;
 }
 
 function likePattern(q: string): string {
@@ -151,13 +156,14 @@ export async function listLeads(
   const total = count?.n ?? 0;
 
   const rows = await sql<LeadRow[]>`
-    select l.id, l.kind, l.full_name as "fullName", l.email, l.zip, l.contact_method as "contactMethod",
+    select l.id, l.kind, l.full_name as "fullName", l.email, l.zip, l.state, l.contact_method as "contactMethod",
            l.phone_e164 as "phoneE164", l.coverage_interest as "coverageInterest",
            l.licensing_status as "licensingStatus", l.status, l.assigned_to as "assignedTo",
            u.display_name as "assignedName", l.follow_up_on as "followUpOn",
            l.submission_count as "submissionCount", l.created_at as "createdAt",
            l.last_activity_at as "lastActivityAt", l.needs_review as "needsReview",
-           l.suppression_match as "suppressionMatch",
+           l.suppression_match as "suppressionMatch", l.is_synthetic as "isSynthetic",
+           l.consent_withdrawn_at as "consentWithdrawnAt",
            (select i.reference from allset.inquiries i where i.lead_id = l.id order by i.created_at desc limit 1) as "latestReference"
     from allset.leads l
     left join allset.staff_users u on u.id = l.assigned_to
@@ -182,6 +188,8 @@ export interface InquiryRecord {
   readonly consentText: string;
   readonly consentVersion: string;
   readonly consentedAt: Date;
+  /** The channels the person agreed to be contacted on. */
+  readonly consentChannels: readonly string[];
   readonly payload: Record<string, unknown>;
 }
 
@@ -225,13 +233,14 @@ export async function getLead(sql: Sql, actor: Actor, id: string): Promise<LeadD
   if (!access) return null;
 
   const [lead] = await sql<(LeadRow & { closedAt: Date | null })[]>`
-    select l.id, l.kind, l.full_name as "fullName", l.email, l.zip, l.contact_method as "contactMethod",
+    select l.id, l.kind, l.full_name as "fullName", l.email, l.zip, l.state, l.contact_method as "contactMethod",
            l.phone_e164 as "phoneE164", l.coverage_interest as "coverageInterest",
            l.licensing_status as "licensingStatus", l.status, l.assigned_to as "assignedTo",
            u.display_name as "assignedName", l.follow_up_on as "followUpOn",
            l.submission_count as "submissionCount", l.created_at as "createdAt",
            l.last_activity_at as "lastActivityAt", l.needs_review as "needsReview",
-           l.suppression_match as "suppressionMatch", l.closed_at as "closedAt",
+           l.suppression_match as "suppressionMatch", l.is_synthetic as "isSynthetic",
+           l.consent_withdrawn_at as "consentWithdrawnAt", l.closed_at as "closedAt",
            (select i.reference from allset.inquiries i where i.lead_id = l.id order by i.created_at desc limit 1) as "latestReference"
     from allset.leads l
     left join allset.staff_users u on u.id = l.assigned_to
@@ -240,7 +249,8 @@ export async function getLead(sql: Sql, actor: Actor, id: string): Promise<LeadD
 
   const inquiries = await sql<InquiryRecord[]>`
     select id, reference, created_at as "createdAt", source_path as "sourcePath", consent_text as "consentText",
-           consent_version as "consentVersion", consented_at as "consentedAt", payload
+           consent_version as "consentVersion", consented_at as "consentedAt",
+           consent_channels as "consentChannels", payload
     from allset.inquiries where lead_id = ${id} order by created_at desc`;
   const notes = await sql<NoteRecord[]>`
     select n.id, n.body, n.created_at as "createdAt", u.display_name as "authorName"
@@ -291,9 +301,16 @@ export async function updateStatus(sql: Sql, actor: Actor, id: string, status: s
       throw error;
     }
     if (status === 'do_not_contact') {
+      // An explicit request to stop: record when consent was withdrawn, add the
+      // person to the do-not-contact list, and withdraw anything still queued.
       const [contact] = await tx<{ email_normalized: string; phone_e164: string | null }[]>`
-        select email_normalized, phone_e164 from allset.leads where id = ${id}`;
-      if (contact) await suppress(tx, { emailNormalized: contact.email_normalized, phoneE164: contact.phone_e164 }, actor.id);
+        update allset.leads set consent_withdrawn_at = coalesce(consent_withdrawn_at, now())
+        where id = ${id}
+        returning email_normalized, phone_e164`;
+      if (contact) {
+        await suppress(tx, { emailNormalized: contact.email_normalized, phoneE164: contact.phone_e164 }, actor.id, 'explicit_opt_out');
+      }
+      await cancelLeadAlerts(tx, id, 'The person asked not to be contacted.');
     }
     await recordAudit(tx, {
       actor: auditActor(actor),
@@ -348,10 +365,12 @@ export async function applyInquiryDetails(sql: Sql, actor: Actor, id: string, in
     }
     const interest = str('coverageInterest');
     const licensing = str('licensingStatus');
+    const state = str('state');
     await tx`
       update allset.leads set
         full_name = ${name.slice(0, 100)},
         zip = ${zip},
+        state = ${state && isStateCode(state) ? state : sql`state`},
         contact_method = ${method},
         phone_e164 = ${phone},
         coverage_interest = ${lead.kind === 'coverage' && interest && (COVERAGE_INTERESTS as readonly string[]).includes(interest) ? interest : sql`coverage_interest`},
@@ -463,13 +482,13 @@ export async function addNote(sql: Sql, actor: Actor, id: string, body: string):
  * The owner must type one of the lead's references to confirm. The audit
  * trail keeps that a deletion happened and by whom, not who was deleted.
  */
-export async function deleteLead(
-  sql: Sql,
-  actor: Actor,
-  id: string,
-  confirmation: string,
-  options: { readonly suppress?: boolean } = {},
-): Promise<{ reference: string }> {
+/**
+ * Deletes a lead and everything under it (inquiries, consent records, notes).
+ * Deletion is not an opt-out: it adds nothing to the do-not-contact list and
+ * removes nothing from it. If the person also asked us to stop, mark the lead
+ * "Do not contact" first; that is the step that records it.
+ */
+export async function deleteLead(sql: Sql, actor: Actor, id: string, confirmation: string): Promise<{ reference: string }> {
   if (!can(actor, 'lead.delete')) throw new PermissionError('Only an owner can delete a lead.');
   return sql.begin(async (tx) => {
     const lead = await visibleLead(tx, actor, id, true);
@@ -479,11 +498,7 @@ export async function deleteLead(
     const typed = confirmation.trim().toUpperCase();
     const match = refs.find((r) => r.reference === typed);
     if (!match) throw new PermissionError('Type one of this lead’s reference numbers exactly to confirm.');
-    if (options.suppress) {
-      const [contact] = await tx<{ email_normalized: string; phone_e164: string | null }[]>`
-        select email_normalized, phone_e164 from allset.leads where id = ${id}`;
-      if (contact) await suppress(tx, { emailNormalized: contact.email_normalized, phoneE164: contact.phone_e164 }, actor.id);
-    }
+    const canceled = await cancelLeadAlerts(tx, id, 'The lead was deleted before this alert was sent.');
     await tx`delete from allset.leads where id = ${id}`;
     await recordAudit(tx, {
       actor: auditActor(actor),
@@ -491,7 +506,7 @@ export async function deleteLead(
       entityType: 'lead',
       entityId: id,
       entityRef: match.reference,
-      details: { kind: lead.kind, inquiries_deleted: refs.length, added_to_do_not_contact: Boolean(options.suppress) },
+      details: { kind: lead.kind, inquiries_deleted: refs.length, alerts_canceled: canceled },
     });
     return { reference: match.reference };
   });

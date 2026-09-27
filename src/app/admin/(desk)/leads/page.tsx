@@ -170,6 +170,12 @@ export default async function LeadsPage({ searchParams }: Props) {
                     <br />
                     <span className="muted">{lead.latestReference}</span>
                     {lead.submissionCount > 1 ? <span className="muted"> · sent {lead.submissionCount}×</span> : null}
+                    {lead.isSynthetic ? (
+                      <>
+                        {' '}
+                        <span className="tag">Test data</span>
+                      </>
+                    ) : null}
                     {lead.suppressionMatch ? (
                       <>
                         {' '}

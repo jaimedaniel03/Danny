@@ -10,11 +10,10 @@ import { randomToken, sha256Hex, safeEqual } from '@/allset/crypto';
 import { recordAudit, type AuditActor } from '@/allset/audit';
 import { hit, LIMITS } from '@/allset/ratelimit';
 import { dummyHash, hashPassword, passwordProblem, verifyPassword } from './password';
+import { findDevice } from './mfa';
 import { revokeAllSessions } from './sessions';
 import { PermissionError, can, type Actor, type Role } from './roles';
 
-export const LOCKOUT_THRESHOLD = 5;
-export const LOCKOUT_MINUTES = 15;
 export const INVITE_TTL_HOURS = 48;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -23,122 +22,100 @@ function auditActor(actor: Actor): AuditActor {
   return { id: actor.id, label: `${actor.displayName} (${actor.role})` };
 }
 
-// ── Sign-in ──────────────────────────────────────────────────────────────
+// ── Sign-in (first step: the password) ───────────────────────────────────
 
 export type SignInResult =
-  | { readonly ok: true; readonly staffId: string }
+  /** Password right; the account has two-step sign-in, so a code comes next. */
+  | { readonly ok: true; readonly staffId: string; readonly next: 'mfa'; readonly deviceId: string | null }
+  /** Password right; two-step sign-in isn't set up yet, so that comes next. */
+  | { readonly ok: true; readonly staffId: string; readonly next: 'enroll' }
   | { readonly ok: false; readonly reason: 'invalid' | 'throttled'; readonly retryAfterSeconds?: number };
 
-interface AttemptRow {
+interface AccountRow {
   readonly id: string;
-  readonly password_hash: string | null;
-  readonly display_name: string;
-  readonly role: Role;
-  readonly failed_login_count: number;
+  readonly password_hash: string;
+  readonly mfa_enabled_at: Date | null;
 }
 
 /**
- * Sign-in, hardened against parallel guessing:
+ * The password step, built so an attacker can't lock the real person out:
  *
- *  1. Every attempt is counted (per IP and per email) before any password
- *     work, so a burst of concurrent requests cannot slip under the limit.
- *  2. The account's failure counter is claimed atomically in the same
- *     statement that checks the lock; once it passes the threshold the
- *     account is locked and no further password is even checked.
- *  3. A locked account and a throttled connection get the same answer,
- *     whether or not the password was right — so the lock cannot be used
- *     to confirm a guess — and unknown emails do equivalent work.
+ *  1. Every attempt counts against the connection (per IP) and against a
+ *     second budget before any password work, so a parallel burst can't slip
+ *     under either limit.
+ *  2. That second budget depends on the browser. A browser that has already
+ *     completed a full sign-in to this account (a remembered device) has its
+ *     own budget. Every other browser shares the account's "new device"
+ *     budget. Someone hammering the account from elsewhere exhausts only the
+ *     shared one; the owner's own devices keep working.
+ *  3. Windows are short and fixed. Nothing locks an account beyond one window.
+ *  4. Unknown emails do the same work and get the same answers, so neither
+ *     the timing nor the switch to "throttled" reveals which accounts exist.
+ *
+ * A right password never produces a full session by itself: the second step
+ * (or, for a new account, setting it up) always follows.
  */
 export async function signIn(
   sql: Sql,
   rawEmail: string,
   password: string,
-  ctx: { ip: string },
+  ctx: { readonly ip: string; readonly deviceToken?: string | null },
 ): Promise<SignInResult> {
   const email = rawEmail.trim().toLowerCase().slice(0, 254);
+  const [account] = await sql<AccountRow[]>`
+    select id, password_hash, mfa_enabled_at from allset.staff_users
+    where lower(email) = ${email} and is_active and password_hash is not null`;
+  const device = await findDevice(sql, ctx.deviceToken ?? null);
+  const trusted = Boolean(account && device && device.staffId === account.id);
 
   const byIp = await hit(sql, LIMITS.loginPerIp, ctx.ip);
-  const byEmail = await hit(sql, LIMITS.loginPerEmail, email);
-  if (!byIp.allowed || !byEmail.allowed) {
-    await recordAudit(sql, { actor: null, action: 'auth.sign_in_throttled', details: { per_connection: !byIp.allowed, per_account: !byEmail.allowed } });
+  const budget = trusted
+    ? await hit(sql, LIMITS.loginPerDevice, device!.id)
+    : await hit(sql, LIMITS.loginPerAccountNewDevice, email);
+  if (!byIp.allowed || !budget.allowed) {
+    await recordAudit(sql, {
+      actor: null,
+      action: 'auth.sign_in_throttled',
+      ...(account ? { entityType: 'staff' as const, entityId: account.id } : {}),
+      details: { per_connection: !byIp.allowed, per_account: !budget.allowed, remembered_device: trusted },
+    });
     return {
       ok: false,
       reason: 'throttled',
-      retryAfterSeconds: Math.max(byIp.allowed ? 0 : byIp.retryAfterSeconds, byEmail.allowed ? 0 : byEmail.retryAfterSeconds),
+      retryAfterSeconds: Math.max(byIp.allowed ? 0 : byIp.retryAfterSeconds, budget.allowed ? 0 : budget.retryAfterSeconds),
     };
   }
 
-  // Claim an attempt on the account atomically. No row means: no such
-  // usable account, or it is locked right now.
-  const [claimed] = await sql<AttemptRow[]>`
-    update allset.staff_users
-    set failed_login_count = failed_login_count + 1, updated_at = now()
-    where lower(email) = ${email}
-      and is_active
-      and password_hash is not null
-      and (locked_until is null or locked_until <= now())
-    returning id, password_hash, display_name, role, failed_login_count`;
-
-  if (!claimed) {
-    // Same cost as a real check, whether the account is missing or locked.
-    await verifyPassword(password.slice(0, 256), await dummyHash());
-    const [locked] = await sql<{ id: string }[]>`
-      select id from allset.staff_users where lower(email) = ${email} and locked_until > now()`;
+  const matches = await verifyPassword(password.slice(0, 256), account ? account.password_hash : await dummyHash());
+  if (!account || !matches) {
     await recordAudit(sql, {
       actor: null,
       action: 'auth.sign_in_failed',
-      ...(locked ? { entityType: 'staff' as const, entityId: locked.id } : {}),
-      details: { known_account: Boolean(locked), locked: Boolean(locked) },
+      ...(account ? { entityType: 'staff' as const, entityId: account.id } : {}),
+      details: { known_account: Boolean(account), remembered_device: trusted },
     });
-    if (locked) return { ok: false, reason: 'throttled', retryAfterSeconds: LOCKOUT_MINUTES * 60 };
-    // An unknown address answers like a real one would: refused past the lockout threshold,
-    // so the switch from "invalid" to "throttled" doesn't reveal which accounts exist.
-    return byEmail.count > LOCKOUT_THRESHOLD
-      ? { ok: false, reason: 'throttled', retryAfterSeconds: byEmail.retryAfterSeconds }
-      : { ok: false, reason: 'invalid' };
-  }
-
-  // Past the threshold within this lock window: lock, and don't check.
-  if (claimed.failed_login_count > LOCKOUT_THRESHOLD) {
-    await verifyPassword(password.slice(0, 256), await dummyHash());
-    await lockAccount(sql, claimed.id);
-    return { ok: false, reason: 'throttled', retryAfterSeconds: LOCKOUT_MINUTES * 60 };
-  }
-
-  const matches = await verifyPassword(password.slice(0, 256), claimed.password_hash!);
-  if (!matches) {
-    if (claimed.failed_login_count >= LOCKOUT_THRESHOLD) await lockAccount(sql, claimed.id);
-    await recordAudit(sql, {
-      actor: null,
-      action: 'auth.sign_in_failed',
-      entityType: 'staff',
-      entityId: claimed.id,
-      details: { known_account: true, locked: claimed.failed_login_count >= LOCKOUT_THRESHOLD },
-    });
-    // The attempt that triggers the lock still answers "invalid"; the next one is refused.
     return { ok: false, reason: 'invalid' };
   }
 
-  await sql`
-    update allset.staff_users
-    set failed_login_count = 0, locked_until = null, last_login_at = now(), updated_at = now()
-    where id = ${claimed.id}`;
-  await recordAudit(sql, {
-    actor: { id: claimed.id, label: `${claimed.display_name} (${claimed.role})` },
-    action: 'auth.signed_in',
-    entityType: 'staff',
-    entityId: claimed.id,
-  });
-  return { ok: true, staffId: claimed.id };
+  await recordAudit(sql, { actor: null, action: 'auth.password_accepted', entityType: 'staff', entityId: account.id, details: { remembered_device: trusted } });
+  return account.mfa_enabled_at
+    ? { ok: true, staffId: account.id, next: 'mfa', deviceId: trusted ? device!.id : null }
+    : { ok: true, staffId: account.id, next: 'enroll' };
 }
 
-async function lockAccount(sql: Sql, staffId: string): Promise<void> {
-  const rows = await sql`
-    update allset.staff_users
-    set locked_until = now() + make_interval(mins => ${LOCKOUT_MINUTES}), failed_login_count = 0, updated_at = now()
-    where id = ${staffId} and (locked_until is null or locked_until <= now())
-    returning id`;
-  if (rows.length > 0) await recordAudit(sql, { actor: null, action: 'auth.locked', entityType: 'staff', entityId: staffId });
+/** Records a completed sign-in (both steps). */
+export async function recordSignedIn(sql: Sql, staffId: string, detail: { usedRecoveryCode: boolean }): Promise<void> {
+  const [row] = await sql<{ display_name: string; role: Role }[]>`
+    update allset.staff_users set last_login_at = now(), updated_at = now()
+    where id = ${staffId}
+    returning display_name, role`;
+  await recordAudit(sql, {
+    actor: { id: staffId, label: `${row?.display_name ?? 'Staff'} (${row?.role ?? 'staff'})` },
+    action: 'auth.signed_in',
+    entityType: 'staff',
+    entityId: staffId,
+    details: { recovery_code: detail.usedRecoveryCode },
+  });
 }
 
 // ── First owner ──────────────────────────────────────────────────────────
@@ -250,7 +227,7 @@ export async function issuePasswordReset(sql: Sql, actor: Actor, staffId: string
       update allset.staff_users
       set password_hash = null, invite_token_hash = ${sha256Hex(token)},
           invite_expires_at = now() + make_interval(hours => ${INVITE_TTL_HOURS}),
-          failed_login_count = 0, locked_until = null, updated_at = now()
+          updated_at = now()
       where id = ${staffId} and is_active
       returning id`;
     if (rows.length === 0) throw new PermissionError('That account is not active.');
@@ -278,7 +255,7 @@ export async function acceptInvite(
   sql: Sql,
   token: string,
   password: string,
-): Promise<FieldResult<{ staffId: string }>> {
+): Promise<FieldResult<{ staffId: string; mfaEnabled: boolean }>> {
   const invite = await findInvite(sql, token);
   if (!invite) return { ok: false, errors: { token: 'This link has expired or was already used. Ask an owner for a new one.' } };
   const problem = passwordProblem(password, invite.email);
@@ -287,9 +264,9 @@ export async function acceptInvite(
   const rows = await sql`
     update allset.staff_users
     set password_hash = ${passwordHash}, invite_token_hash = null, invite_expires_at = null,
-        failed_login_count = 0, locked_until = null, updated_at = now()
+        updated_at = now()
     where id = ${invite.staffId} and invite_token_hash = ${sha256Hex(token)} and invite_expires_at > now()
-    returning id`;
+    returning id, mfa_enabled_at`;
   if (rows.length === 0) return { ok: false, errors: { token: 'This link has expired or was already used.' } };
   await recordAudit(sql, {
     actor: { id: invite.staffId, label: invite.displayName },
@@ -297,7 +274,9 @@ export async function acceptInvite(
     entityType: 'staff',
     entityId: invite.staffId,
   });
-  return { ok: true, value: { staffId: invite.staffId } };
+  // A reset keeps the second step: someone holding only the link still needs the code.
+  const mfaEnabled = Boolean((rows[0] as { mfa_enabled_at: Date | null } | undefined)?.mfa_enabled_at);
+  return { ok: true, value: { staffId: invite.staffId, mfaEnabled } };
 }
 
 export async function changePassword(
@@ -375,6 +354,8 @@ export async function setActive(sql: Sql, actor: Actor, staffId: string, active:
       where id = ${staffId}`;
     if (!active) {
       await tx`delete from allset.staff_sessions where staff_id = ${staffId}`;
+      await tx`delete from allset.staff_devices where staff_id = ${staffId}`;
+      await tx`delete from allset.staff_mfa_challenges where staff_id = ${staffId}`;
       // Their leads go back to the shared pool so nobody's request goes quiet.
       await tx`
         update allset.leads set assigned_to = null, updated_at = now()
@@ -396,6 +377,7 @@ export interface StaffSummary {
   readonly role: Role;
   readonly isActive: boolean;
   readonly pendingInvite: boolean;
+  readonly mfaEnabled: boolean;
   readonly lastLoginAt: Date | null;
   readonly openLeads: number;
 }
@@ -405,6 +387,7 @@ export async function listStaff(sql: Sql, actor: Actor): Promise<StaffSummary[]>
   return sql<StaffSummary[]>`
     select u.id, u.email, u.display_name as "displayName", u.role, u.is_active as "isActive",
            (u.password_hash is null and u.invite_expires_at > now()) as "pendingInvite",
+           (u.mfa_enabled_at is not null) as "mfaEnabled",
            u.last_login_at as "lastLoginAt",
            (select count(*)::int from allset.leads l where l.assigned_to = u.id and l.closed_at is null) as "openLeads"
     from allset.staff_users u

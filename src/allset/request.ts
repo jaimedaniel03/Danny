@@ -15,11 +15,16 @@ export interface RequestContext {
 }
 
 /**
- * On Vercel, x-real-ip and x-forwarded-for are set by the platform edge and a
- * client-supplied value is not passed through. Behind any other proxy this
- * must be revisited: a spoofable IP makes per-IP limits advisory.
+ * The client's IP, for rate-limit keys. Forwarded-IP headers are trusted only
+ * where a proxy we control sets them: on Vercel (whose edge overwrites
+ * x-real-ip and x-forwarded-for, so a client can't choose its own), or when
+ * TRUST_PROXY_IP_HEADERS=true declares another such proxy. Anywhere else they
+ * are whatever the client sent, so every request shares one "unknown" key:
+ * limits then apply to everyone together, which fails closed.
  */
-export function ipFrom(get: (name: string) => string | null): string {
+export function ipFrom(get: (name: string) => string | null, env: NodeJS.ProcessEnv = process.env): string {
+  const trusted = env['VERCEL'] === '1' || env['TRUST_PROXY_IP_HEADERS'] === 'true';
+  if (!trusted) return 'unknown';
   const real = get('x-real-ip')?.trim();
   if (real) return rateLimitKey(real);
   const forwarded = get('x-forwarded-for')?.split(',')[0]?.trim();

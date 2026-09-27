@@ -48,7 +48,7 @@ export function Photo({ slug, alt, sizes, priority = false, className }: PhotoPr
         loading={priority ? 'eager' : 'lazy'}
         decoding={priority ? 'sync' : 'async'}
         fetchPriority={priority ? 'high' : 'auto'}
-        style={{ width: '100%', height: 'auto', aspectRatio: `${largest.width} / ${largest.height}` }}
+        className="photo__img"
       />
     </picture>
   );

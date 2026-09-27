@@ -115,6 +115,7 @@ export default function PrivacyPage() {
           <ul>
             <li>Your name and email address.</li>
             <li>Your ZIP code.</li>
+            <li>The state you live in, and your ZIP code. We can only help where we’re licensed.</li>
             <li>How you’d like us to reach you: email, phone call or text message.</li>
             <li>Your phone number, only if you choose a call or a text.</li>
             <li>
@@ -127,7 +128,8 @@ export default function PrivacyPage() {
             </li>
             <li>
               Your consent choice. We save the exact consent wording you saw, its version, which
-              form you used and the time you agreed, so we can show what you agreed to.
+              form you used, the time you agreed, and the one way you agreed to be contacted (the
+              method you chose), so we can show what you agreed to and contact you only that way.
             </li>
           </ul>
           <h3>What’s recorded automatically</h3>
@@ -304,15 +306,18 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Delete it.</strong> We’ll delete your requests and consent records, as
-              described in <a href="#how-long-we-keep-it">How long we keep it</a>.
+              described in <a href="#how-long-we-keep-it">How long we keep it</a>. Deleting doesn’t
+              add you to our do-not-contact list; if you also want us to stop contacting you, say so
+              and we’ll do both.
             </li>
             <li>
               <strong>Stop contacting you.</strong> Reply STOP to any text from us, reply to any
               email from us, or tell the person who calls you. We’ll mark your record “Do not
-              contact” so no one on our team contacts you about it. We also add a keyed hash of
-              your email address and phone number to our do-not-contact list. If you ask us to
-              delete your information too, that hash is the one thing we keep, so we can recognize
-              your details and not contact you again if they reach us later.
+              contact”, record when you withdrew your consent, and cancel anything still waiting to
+              go out about your request. We also add a keyed hash of your email address and phone
+              number to our do-not-contact list. If you ask us to delete your information too, that
+              hash is the one thing we keep, so we can recognize your details and not contact you
+              again if they reach us later.
             </li>
           </ul>
           <p>

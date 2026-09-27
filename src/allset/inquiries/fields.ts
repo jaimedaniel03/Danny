@@ -11,6 +11,7 @@
  */
 
 import type { InquiryKind } from './consent';
+import { isStateCode, type StateCode } from '@/allset/content/states';
 
 export const CONTACT_METHODS = ['email', 'phone', 'text'] as const;
 export type ContactMethod = (typeof CONTACT_METHODS)[number];
@@ -51,6 +52,7 @@ export interface InquiryValues {
   readonly fullName: string;
   readonly email: string;
   readonly zip: string;
+  readonly state: string;
   readonly contactMethod: string;
   readonly phone: string;
   readonly coverageInterest: string;
@@ -68,6 +70,7 @@ export interface ValidInquiry {
   readonly email: string;
   readonly emailNormalized: string;
   readonly zip: string;
+  readonly state: StateCode;
   readonly contactMethod: ContactMethod;
   readonly phoneE164: string | null;
   readonly coverageInterest: CoverageInterest | null;
@@ -79,6 +82,7 @@ export const EMPTY_VALUES: InquiryValues = {
   fullName: '',
   email: '',
   zip: '',
+  state: '',
   contactMethod: '',
   phone: '',
   coverageInterest: '',
@@ -98,6 +102,7 @@ export function readValues(form: FormData): InquiryValues {
     fullName: text(form, 'fullName'),
     email: text(form, 'email'),
     zip: text(form, 'zip', 20),
+    state: text(form, 'state', 4).toUpperCase(),
     contactMethod: text(form, 'contactMethod', 20),
     phone: text(form, 'phone', 40),
     coverageInterest: text(form, 'coverageInterest', 40),
@@ -154,6 +159,9 @@ export function validateInquiry(kind: InquiryKind, values: InquiryValues): Valid
   if (!values.zip.trim()) errors.zip = 'Enter your ZIP code.';
   else if (!zip) errors.zip = 'Enter a 5-digit ZIP code, like 60601.';
 
+  const state = isStateCode(values.state) ? values.state : null;
+  if (!state) errors.state = 'Choose the state you live in.';
+
   const method = (CONTACT_METHODS as readonly string[]).includes(values.contactMethod)
     ? (values.contactMethod as ContactMethod)
     : null;
@@ -186,7 +194,7 @@ export function validateInquiry(kind: InquiryKind, values: InquiryValues): Valid
 
   if (!values.consent) errors.consent = 'Check the box so we’re allowed to contact you. We can’t follow up without it.';
 
-  if (Object.keys(errors).length > 0 || !zip || !method) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || !zip || !state || !method) return { ok: false, errors };
 
   return {
     ok: true,
@@ -196,6 +204,7 @@ export function validateInquiry(kind: InquiryKind, values: InquiryValues): Valid
       email,
       emailNormalized: email.toLowerCase(),
       zip,
+      state,
       contactMethod: method,
       phoneE164,
       coverageInterest,
@@ -210,6 +219,7 @@ export const FIELD_ORDER: readonly FieldName[] = [
   'fullName',
   'email',
   'zip',
+  'state',
   'coverageInterest',
   'licensingStatus',
   'contactMethod',

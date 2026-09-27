@@ -8,8 +8,8 @@ describeDb('retention', () => {
     const insert = async (monthsAgo: number) => {
       const email = uniqueEmail('retention');
       const [lead] = await sql<{ id: string }[]>`
-        insert into allset.leads (kind, full_name, email, email_normalized, zip, contact_method, coverage_interest, last_activity_at)
-        values ('coverage', 'Old Lead', ${email}, ${email}, '60601', 'email', 'life', now() - make_interval(months => ${monthsAgo}))
+        insert into allset.leads (kind, full_name, email, email_normalized, zip, state, contact_method, coverage_interest, last_activity_at)
+        values ('coverage', 'Old Lead', ${email}, ${email}, '60601', 'IL', 'email', 'life', now() - make_interval(months => ${monthsAgo}))
         returning id`;
       return lead!.id;
     };

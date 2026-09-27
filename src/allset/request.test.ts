@@ -22,11 +22,22 @@ describe('rate-limit keys', () => {
     expect(rateLimitKey('2001:db8:aa:bc::1')).not.toBe(rateLimitKey('2001:db8:aa:bb::1'));
   });
 
-  it('prefers the platform-set x-real-ip, then the first x-forwarded-for hop', () => {
-    const headers = (h: Record<string, string>) => (name: string) => h[name] ?? null;
-    expect(ipFrom(headers({ 'x-real-ip': '198.51.100.1', 'x-forwarded-for': '203.0.113.9' }))).toBe('198.51.100.1');
-    expect(ipFrom(headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }))).toBe('203.0.113.9');
-    expect(ipFrom(headers({ 'x-forwarded-for': '2001:db8:aa:bb::5' }))).toBe('2001:db8:aa:bb::/64');
-    expect(ipFrom(headers({}))).toBe('unknown');
+  const headers = (h: Record<string, string>) => (name: string) => h[name] ?? null;
+
+  it('on Vercel, prefers the platform-set x-real-ip, then the first x-forwarded-for hop', () => {
+    const vercel = { VERCEL: '1' } as unknown as NodeJS.ProcessEnv;
+    expect(ipFrom(headers({ 'x-real-ip': '198.51.100.1', 'x-forwarded-for': '203.0.113.9' }), vercel)).toBe('198.51.100.1');
+    expect(ipFrom(headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }), vercel)).toBe('203.0.113.9');
+    expect(ipFrom(headers({ 'x-forwarded-for': '2001:db8:aa:bb::5' }), vercel)).toBe('2001:db8:aa:bb::/64');
+    expect(ipFrom(headers({}), vercel)).toBe('unknown');
+  });
+
+  it('ignores client-supplied forwarding headers anywhere they are not set by a trusted proxy', () => {
+    const selfHosted = {} as unknown as NodeJS.ProcessEnv;
+    expect(ipFrom(headers({ 'x-real-ip': '198.51.100.1', 'x-forwarded-for': '203.0.113.9' }), selfHosted)).toBe('unknown');
+    const declared = { TRUST_PROXY_IP_HEADERS: 'true' } as unknown as NodeJS.ProcessEnv;
+    expect(ipFrom(headers({ 'x-real-ip': '198.51.100.1' }), declared)).toBe('198.51.100.1');
+    const typo = { TRUST_PROXY_IP_HEADERS: 'yes' } as unknown as NodeJS.ProcessEnv;
+    expect(ipFrom(headers({ 'x-real-ip': '198.51.100.1' }), typo)).toBe('unknown');
   });
 });

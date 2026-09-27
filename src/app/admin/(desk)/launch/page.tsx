@@ -4,6 +4,7 @@ import { db } from '@/allset/db/client';
 import { adminSetupToken, cronSecret, emailConfig, publicBaseUrl, resendWebhookSecret, siteIndexable } from '@/allset/env';
 import { isLaunchReady, launchChecklist } from '@/allset/content/facts';
 import { notificationHealth } from '@/allset/notifications/outbox';
+import { previewIntakeAllowed } from '@/allset/inquiries/gate';
 
 export const metadata: Metadata = { title: 'Launch checklist' };
 
@@ -26,6 +27,13 @@ export default async function LaunchPage() {
     { label: 'Public address set (PUBLIC_BASE_URL)', done: Boolean(publicBaseUrl()), why: 'Used in emailed links and search metadata.' },
     { label: 'Setup token removed (ADMIN_SETUP_TOKEN)', done: !adminSetupToken(), why: 'The first owner exists; the bootstrap secret should not linger.' },
     { label: 'Indexing switched on (SITE_INDEXABLE=true)', done: siteIndexable(), why: 'Only after every required fact below is verified.' },
+    {
+      label: 'Public intake open',
+      done: isLaunchReady(),
+      why: previewIntakeAllowed()
+        ? 'Closed to the public until every required fact is verified. This deployment allows a staff-only preview: signed-in staff can send test requests, stored as test data.'
+        : 'Closed to the public until every required fact is verified. The forms show a notice instead.',
+    },
   ];
 
   return (
@@ -61,6 +69,15 @@ export default async function LaunchPage() {
                 </span>
                 <br />
                 <span className="fine-print">{item.why}</span>
+                {item.evidence.length > 0 ? (
+                  <ul className="evidence">
+                    {item.evidence.map((e, i) => (
+                      <li key={i} className="fine-print">
+                        Verified by {e.verifiedBy} on {e.verifiedOn}. Source: {e.source}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </span>
             </li>
           ))}

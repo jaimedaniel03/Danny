@@ -5,8 +5,10 @@ node_modules/
 /coverage/
 
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
 
 # Never commit call media or transcripts — they contain PII and PHI
 recordings/
@@ -42,3 +44,12 @@ book/*
 # Playwright
 test-results/
 playwright-report/
+
+# Licensed stock masters and design sources never go in the repository;
+# only the web-size derivatives in public/images are committed.
+AdobeStock_*
+*.psd
+*.tif
+*.tiff
+*.jpg
+*.jpeg

@@ -29,7 +29,7 @@ export default async function DeskLayout({ children }: { children: ReactNode }) 
       </a>
       <header className="admin-bar">
         <div className="container admin-bar__inner">
-          <Link href="/admin" className="target" style={{ gap: '0.5rem', textDecoration: 'none', fontWeight: 700 }}>
+          <Link href="/admin" className="target admin-bar__brand">
             <Mark size={30} tone="paper" />
             Lead desk
           </Link>

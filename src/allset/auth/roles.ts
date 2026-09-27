@@ -17,6 +17,8 @@ export interface Actor {
   readonly displayName: string;
   readonly email: string;
   readonly sessionId: string;
+  /** Both sign-in steps done. Page and action guards require it (see session-cookie.ts). */
+  readonly mfaVerified?: boolean;
 }
 
 export type OwnerPermission =

@@ -54,8 +54,12 @@ These apply to every word on the public site.
    term the first time it appears. Aim for an 8th-grade reading level.
 9. **Point to free public help** (HealthCare.gov, Medicaid/CHIP, Medicare.gov)
    where it genuinely fits. Trust is built by not selling what isn't needed.
-10. **Photos** are licensed Adobe Stock images of models. Alt text describes the
-    scene; captions never present a model as a client, founder or team member.
+10. **Photos** are Adobe Stock images (free collection, not AI-generated),
+    licensed through the owner's Adobe account on 2026-09-26; each slot's
+    record is in `scripts/build-images.ts`. The license API returned no
+    license ID or model-release status: confirm both in the account's Adobe
+    Stock license history. Alt text describes the scene; nothing presents a
+    person pictured as a client, founder or team member.
 
 ---
 
@@ -95,9 +99,17 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 
 ## Security model
 
-- Staff sign in with email + password (scrypt). Sessions are random 256-bit
-  tokens in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie; only their SHA-256
-  is stored. Sessions expire after 12 hours, or 2 hours idle.
+- Staff sign in with email + password (scrypt) **and** a TOTP code from an
+  authenticator app. Every account must set this up before it can reach the
+  lead desk. TOTP secrets are encrypted (AES-256-GCM, key derived from
+  `APP_SECRET`), each code works once, and ten one-time recovery codes are
+  stored as hashes. A password reset never removes the second step. Losing
+  both the authenticator and the recovery codes means another owner resets
+  two-step sign-in (audited). A sole owner who loses both needs direct
+  database access to recover.
+- Sessions are random 256-bit tokens in an `HttpOnly`, `Secure`,
+  `SameSite=Lax` cookie; only their SHA-256 is stored. Sessions expire after
+  12 hours, or 2 hours idle.
 - Roles are `owner` and `staff`, enforced on the server in every page, action
   and route (`src/allset/auth/`). Staff see only leads assigned to them or
   unassigned; only owners delete, export, manage staff, alerts and the audit log.
@@ -109,12 +121,18 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 - Admin pages send `noindex`, `no-store`, and a nonce-based CSP. `/contact`
   and `/team` (the pages that collect personal data) get the same per-request
   nonce policy; other public pages use a static baseline policy.
-- Sign-in: per-connection and per-account rate limits run before any password
-  work; the account's failure counter is claimed atomically, so a parallel
-  burst can't slip past the lock (5 failures → 15-minute lock). Real and
-  unknown accounts answer identically through the lockout. Trade-off: anyone
-  who knows a staff email can keep that account locked; an owner can still
-  issue a reset link.
+- Sign-in throttling is bounded, with no account lock an attacker can
+  extend. Every attempt counts before any password work, against a
+  per-connection limit (20 / 15 min) and a second budget. A browser that has
+  completed a full sign-in (a "remembered device") has its own budget
+  (10 / 15 min). Every other browser shares the account's "new device"
+  budget (10 / 15 min). Someone hammering an account from anywhere else only
+  exhausts that shared budget, and the owner's own devices keep working.
+  Code checks, recovery codes (on their own separate limit) and setup
+  attempts are limited too. Real and unknown accounts answer identically.
+- Forwarded-IP headers are trusted only on Vercel (whose edge sets them) or
+  behind a proxy declared with `TRUST_PROXY_IP_HEADERS`. The same-origin
+  check for route handlers and redirects never trusts `X-Forwarded-Host`.
 - One-time links (invites, password resets, alert-recipient confirmation)
   carry the token in the URL fragment (`#token=…`), which browsers never send
   to a server, a log or a `Referer` header. The page reads it, then strips it
@@ -151,7 +169,8 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 | `RESEND_API_KEY`, `NOTIFY_FROM` | for alerts | Without them, alerts fail visibly in the admin |
 | `RESEND_WEBHOOK_SECRET` | for delivery tracking | Svix signing secret from Resend |
 | `SITE_INDEXABLE` | launch | `true` allows indexing — but only once every launch-required fact is verified |
-| `ALLOW_PRELAUNCH_INQUIRIES` | preview only | `true` opens the forms before launch, for a private, access-protected preview. Without it, forms stay closed (enforced in the server action) until every launch-required fact is verified. Never set it on a public deployment before launch |
+| `INTAKE_PREVIEW` | preview only | `true` lets **signed-in staff** use the forms before launch, on a deployment that isn't production; everything they send is stored as test data. It can't open the forms to the public, and it's ignored on production deployments and indexable sites |
+| `TRUST_PROXY_IP_HEADERS` | self-hosted only | `true` trusts `x-real-ip`/`x-forwarded-for` for rate limits. Set it only behind a proxy that overwrites those headers. On Vercel it's automatic; elsewhere, without it, every request shares one limit key |
 | `BUSINESS_TIMEZONE` | no | IANA zone for "due today" (default `America/Chicago`) |
 
 ### Deployment
@@ -164,7 +183,7 @@ says it isn't connected. Without `PUBLIC_BASE_URL`, links and metadata use
 the deployment's own Vercel address.
 
 To bring the lead desk up, set `DATABASE_URL`, `APP_SECRET`, `CRON_SECRET`
-and `ADMIN_SETUP_TOKEN` (plus `ALLOW_PRELAUNCH_INQUIRIES=true` for a private
+and `ADMIN_SETUP_TOKEN` (plus `INTAKE_PREVIEW=true` for a staff-only
 test run), then redeploy. The daily cron jobs are registered on production
 deployments and answer 401 until `CRON_SECRET` is set.
 

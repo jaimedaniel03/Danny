@@ -46,6 +46,8 @@ const FactsSchema = z
         z
           .object({
             state: stateCode,
+            /** A person's producer license or the agency's own. Many states require both. */
+            holderType: z.enum(['individual', 'agency']),
             holder: z.string().min(2),
             licenseNumber: z.string().min(2),
             lines: z.array(z.enum(['life', 'health'])).min(1),
@@ -130,6 +132,8 @@ const FactsSchema = z
           pay: z.string().min(20),
           expenses: z.array(z.object({ item: z.string().min(3), cost: z.string().min(1) }).strict()).min(1),
           chargebacks: z.string().min(20),
+          /** Who supervises new agents, and how. */
+          supervision: z.string().min(20),
           upline: z.string().nullable(),
         })
         .strict(),
@@ -185,17 +189,59 @@ export function parseFacts(input: unknown): BusinessFacts {
 
 // ── Launch readiness ────────────────────────────────────────────────────
 
+export interface Evidence {
+  readonly verifiedBy: string;
+  readonly verifiedOn: string;
+  readonly source: string;
+}
+
 export interface ChecklistItem {
   readonly key: string;
   readonly label: string;
   readonly why: string;
   readonly requiredForLaunch: boolean;
   readonly done: boolean;
+  /** Who verified each fact behind this item, when, and from what. */
+  readonly evidence: readonly Evidence[];
+}
+
+function proofOf(...records: ({ verifiedBy: string; verifiedOn: string; source: string } | null | undefined)[]): Evidence[] {
+  return records.flatMap((r) => (r ? [{ verifiedBy: r.verifiedBy, verifiedOn: r.verifiedOn, source: r.source }] : []));
+}
+
+function evidenceFor(key: string, facts: BusinessFacts): Evidence[] {
+  switch (key) {
+    case 'legalEntity':
+      return proofOf(facts.legalEntity);
+    case 'licenses':
+    case 'lines':
+      return proofOf(...facts.licenses);
+    case 'npn':
+      return proofOf(facts.npn);
+    case 'serviceArea':
+      return proofOf(facts.serviceArea);
+    case 'contact':
+      return proofOf(facts.contact.phone, facts.contact.email, facts.contact.mailingAddress);
+    case 'compensation':
+      return proofOf(facts.compensation);
+    case 'carriers':
+      return proofOf(...facts.carriers);
+    case 'teamRole':
+      return proofOf(facts.teamRole);
+    case 'founderStory':
+      return proofOf(facts.founderStory);
+    case 'testimonials':
+      return proofOf(...facts.testimonials);
+    case 'legalReview':
+      return proofOf(facts.legalReview);
+    default:
+      return [];
+  }
 }
 
 export function launchChecklist(facts: BusinessFacts = FACTS): readonly ChecklistItem[] {
   const licensedLines = new Set(facts.licenses.flatMap((l) => l.value.lines));
-  return [
+  const items: Omit<ChecklistItem, 'evidence'>[] = [
     {
       key: 'legalEntity',
       label: 'Registered legal entity name, type and formation state',
@@ -208,7 +254,12 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
       label: 'Producer/agency license numbers for each state and line (life, health)',
       why: 'Many states require the license number on advertising, and the site must not imply a license the team does not hold.',
       requiredForLaunch: true,
-      done: facts.licenses.length > 0,
+      // A person must be licensed wherever the business serves families.
+      done:
+        facts.serviceArea !== null &&
+        facts.serviceArea.value.states.every((state) =>
+          facts.licenses.some((l) => l.value.state === state && l.value.holderType === 'individual'),
+        ),
     },
     {
       key: 'lines',
@@ -221,7 +272,7 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
       key: 'npn',
       label: 'National Producer Number',
       why: 'Lets visitors verify licensing through NIPR and state lookups.',
-      requiredForLaunch: false,
+      requiredForLaunch: true,
       done: facts.npn !== null,
     },
     {
@@ -233,11 +284,10 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
     },
     {
       key: 'contact',
-      label: 'Business phone or email, and a mailing address',
+      label: 'Business phone, email and mailing address',
       why: 'People need a way to reach a person, and the privacy policy needs a contact for data requests.',
       requiredForLaunch: true,
-      done:
-        (facts.contact.phone !== null || facts.contact.email !== null) && facts.contact.mailingAddress !== null,
+      done: facts.contact.phone !== null && facts.contact.email !== null && facts.contact.mailingAddress !== null,
     },
     {
       key: 'compensation',
@@ -249,13 +299,13 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
     {
       key: 'carriers',
       label: 'Carrier appointments (and written logo permissions, if logos will show)',
-      why: 'Naming a carrier implies a relationship that must exist; logos are trademarks.',
-      requiredForLaunch: false,
+      why: 'Selling a carrier’s policies needs an appointment with it, and naming a carrier implies a relationship that must exist. Logos are trademarks.',
+      requiredForLaunch: true,
       done: facts.carriers.length > 0,
     },
     {
       key: 'teamRole',
-      label: 'Team role terms: relationship, licensing, training, pay, expenses, chargebacks',
+      label: 'Team role terms: relationship, licensing, training, pay, expenses, chargebacks, supervision',
       why: 'Recruits must see the real terms before signing up. The team page shows general facts until these exist.',
       requiredForLaunch: true,
       done: facts.teamRole !== null,
@@ -264,7 +314,7 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
       key: 'founderStory',
       label: "Founders' story, approved word for word",
       why: 'The story page shows the mission only until the founders confirm their own account.',
-      requiredForLaunch: false,
+      requiredForLaunch: true,
       done: facts.founderStory !== null,
     },
     {
@@ -282,6 +332,7 @@ export function launchChecklist(facts: BusinessFacts = FACTS): readonly Checklis
       done: facts.legalReview !== null,
     },
   ];
+  return items.map((item) => ({ ...item, evidence: evidenceFor(item.key, facts) }));
 }
 
 export function isLaunchReady(facts: BusinessFacts = FACTS): boolean {

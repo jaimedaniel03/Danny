@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { connection } from 'next/server';
 import { Newsreader, Public_Sans } from 'next/font/google';
 import { siteIndexable, publicBaseUrl } from '@/allset/env';
 import { isLaunchReady } from '@/allset/content/facts';
@@ -56,7 +57,12 @@ export const viewport: Viewport = {
   // No maximumScale: people must be able to zoom.
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+/**
+ * Every page renders per request: the Content-Security-Policy carries a fresh
+ * nonce each time (src/middleware.ts), and a prerendered page couldn't carry it.
+ */
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  await connection();
   return (
     <html lang="en" className={`${serif.variable} ${sans.variable}`}>
       <body>{children}</body>

@@ -16,7 +16,7 @@ export default async function AccountPage() {
         {SESSION_IDLE_MINUTES / 60} hours without activity.
       </p>
 
-      <section className="panel" aria-labelledby="password-title" style={{ maxWidth: '36rem' }}>
+      <section className="panel panel--narrow" aria-labelledby="password-title">
         <h2 id="password-title" className="panel__title">
           Change your password
         </h2>
@@ -47,7 +47,7 @@ export default async function AccountPage() {
         </ActionForm>
       </section>
 
-      <section className="panel" aria-labelledby="sessions-title" style={{ maxWidth: '36rem' }}>
+      <section className="panel panel--narrow" aria-labelledby="sessions-title">
         <h2 id="sessions-title" className="panel__title">
           Other devices
         </h2>

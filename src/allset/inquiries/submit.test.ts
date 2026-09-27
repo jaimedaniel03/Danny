@@ -19,6 +19,7 @@ function inquiry(email: string, over: Partial<ValidInquiry> = {}): ValidInquiry 
     email,
     emailNormalized: email.toLowerCase(),
     zip: '60601',
+    state: 'IL',
     contactMethod: 'email',
     phoneE164: null,
     coverageInterest: 'life',

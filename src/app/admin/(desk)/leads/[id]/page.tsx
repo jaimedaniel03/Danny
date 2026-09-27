@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation';
 import { requireActor } from '@/allset/auth/session-cookie';
 import { can } from '@/allset/auth/roles';
 import { db } from '@/allset/db/client';
-import { RETENTION } from '@/allset/retention';
 import { listAssignable } from '@/allset/auth/accounts';
 import { getLead, LEAD_STATUSES, NOTE_MAX, STATUS_LABELS } from '@/allset/leads/repo';
 import {
@@ -15,6 +14,8 @@ import {
   type LicensingStatus,
 } from '@/allset/inquiries/fields';
 import { formatPhone } from '@/allset/content/format';
+import { stateName } from '@/allset/content/states';
+import { FlashStatus } from '@/components/admin/FlashStatus';
 import { ActionForm, Submit } from '@/components/admin/ActionForm';
 import { actionLabel, detailLine, formatDate, formatDateTime, statusLabel, statusTagClass } from '@/components/admin/format';
 import {
@@ -41,6 +42,7 @@ function payloadLine(payload: Record<string, unknown>): string {
     get('email'),
     phone ? formatPhone(phone) : null,
     get('zip') ? `ZIP ${get('zip')}` : null,
+    get('state') ? stateName(get('state')!) : null,
     method && method in CONTACT_METHOD_LABELS ? `prefers ${CONTACT_METHOD_LABELS[method as keyof typeof CONTACT_METHOD_LABELS].toLowerCase()}` : null,
     interest ? COVERAGE_INTEREST_LABELS[interest as CoverageInterest] : null,
     licensing ? LICENSING_STATUS_LABELS[licensing as LicensingStatus] : null,
@@ -50,6 +52,8 @@ function payloadLine(payload: Record<string, unknown>): string {
 }
 
 export const metadata: Metadata = { title: 'Lead' };
+
+const CHANNEL_LABELS: Record<string, string> = { email: 'email', phone: 'phone call', text: 'text message' };
 
 interface Props {
   readonly params: Promise<{ id: string }>;
@@ -92,6 +96,7 @@ export default async function LeadPage({ params, searchParams }: Props) {
         <h1 className="admin-title">{lead.fullName}</h1>
         <p>
           <span className={statusTagClass(lead.status)}>{statusLabel(lead.status)}</span>{' '}
+          {lead.isSynthetic ? <span className="tag">Test data</span> : null}{' '}
           <span className="muted">
             {lead.latestReference} · received {formatDateTime(lead.createdAt)}
             {lead.submissionCount > 1 ? ` · submitted ${lead.submissionCount} times` : ''}
@@ -99,9 +104,11 @@ export default async function LeadPage({ params, searchParams }: Props) {
         </p>
       </header>
 
-      {reviewedMessage ? (
-        <p className="notice notice--success" role="status">
-          {reviewedMessage}
+      {reviewedMessage ? <FlashStatus message={reviewedMessage} /> : null}
+
+      {lead.isSynthetic ? (
+        <p className="notice notice--warning" role="note">
+          <strong>Test data.</strong> Sent from a staff-only preview with made-up details. Not a real person.
         </p>
       ) : null}
 
@@ -160,6 +167,8 @@ export default async function LeadPage({ params, searchParams }: Props) {
               ) : null}
               <dt>ZIP</dt>
               <dd>{lead.zip}</dd>
+              <dt>State</dt>
+              <dd>{stateName(lead.state)}</dd>
               <dt>{lead.kind === 'coverage' ? 'Wants help with' : 'Licensing'}</dt>
               <dd>{qualifier}</dd>
               <dt>Assigned to</dt>
@@ -230,9 +239,15 @@ export default async function LeadPage({ params, searchParams }: Props) {
                   <div className="consent-record">
                     <p>
                       Agreed {formatDateTime(inquiry.consentedAt)} to wording version{' '}
-                      <code>{inquiry.consentVersion}</code>:
+                      <code>{inquiry.consentVersion}</code>, on {inquiry.sourcePath}, to be contacted by{' '}
+                      {inquiry.consentChannels.map((c) => CHANNEL_LABELS[c] ?? c).join(', ')} only:
                     </p>
                     <p>“{inquiry.consentText}”</p>
+                    {lead.consentWithdrawnAt ? (
+                      <p>
+                        <strong>Withdrawn {formatDateTime(lead.consentWithdrawnAt)}</strong> (they asked us to stop).
+                      </p>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -349,7 +364,13 @@ export default async function LeadPage({ params, searchParams }: Props) {
               </h2>
               <p className="fine-print">
                 For a deletion request or a mistaken entry. Removes this lead, its notes and its consent
-                records. The audit log keeps only that a deletion happened.
+                records, and cancels any alerts still queued about it. The audit log keeps only that a
+                deletion happened.
+              </p>
+              <p className="fine-print">
+                Deleting is not the same as asking us to stop. It doesn’t add anyone to the do-not-contact
+                list (and doesn’t remove anyone from it). If they also asked not to be contacted, set the
+                status to “Do not contact” first, then delete.
               </p>
               <ActionForm action={deleteLeadAction} aria-label="Delete lead">
                 <input type="hidden" name="leadId" value={lead.id} />
@@ -359,19 +380,6 @@ export default async function LeadPage({ params, searchParams }: Props) {
                   </label>
                   <input id="confirmation" name="confirmation" className="input" autoComplete="off" required />
                 </div>
-                <label className="choice choice--plain">
-                  <input
-                    type="checkbox"
-                    name="suppress"
-                    value="yes"
-                    defaultChecked={lead.status === 'do_not_contact'}
-                  />
-                  <span>
-                    They also asked us not to contact them. Keep a one-way code of their email and phone for{' '}
-                    {RETENTION.suppressionYears} years so a future request in their name is flagged. Leave
-                    this unchecked if they only asked to be deleted.
-                  </span>
-                </label>
                 <Submit variant="danger" pendingLabel="Deleting…">
                   Delete this lead
                 </Submit>

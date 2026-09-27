@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { db, describeDb, uniqueEmail } from '@/allset/testing/db';
-import { DeliveryError, setTransportForTests, type EmailTransport, type OutgoingEmail } from './transport';
+import { DeliveryError, parseRetryAfter, setTransportForTests, type EmailTransport, type OutgoingEmail } from './transport';
 import { ALERTS_PER_HOUR_CAP, deliverPending, enqueueLeadAlerts, retryFailed } from './outbox';
 import { addRecipient, confirmRecipient } from './recipients';
 import { applyDeliveryEvent, verifySvixSignature } from './webhook';
@@ -31,7 +31,7 @@ async function newLead(): Promise<{ leadId: string; reference: string }> {
   const email = uniqueEmail('alerted');
   const outcome = await submitInquiry(
     db(),
-    { kind: 'team', fullName: 'Sam Lee', email, emailNormalized: email, zip: '10001', contactMethod: 'email', phoneE164: null, coverageInterest: null, licensingStatus: 'not_licensed', disclosureAck: true },
+    { kind: 'team', fullName: 'Sam Lee', email, emailNormalized: email, zip: '10001', state: 'NY', contactMethod: 'email', phoneE164: null, coverageInterest: null, licensingStatus: 'not_licensed', disclosureAck: true },
     crypto.randomUUID(),
     { ip: `n-${email}`, ipHash: 'h', userAgent: null, sourcePath: '/team' },
   );
@@ -113,6 +113,25 @@ describeDb('alerts', () => {
     await db()`update allset.notification_recipients set disabled_at = now() where id = ${added.id}`;
   });
 
+  it('refuses an expired or unknown confirmation link, and loading the page never confirms', async () => {
+    const actor = await owner();
+    const transport = new Recorder();
+    setTransportForTests(transport);
+    const address = uniqueEmail('late-confirm');
+    const added = await addRecipient(db(), actor, address);
+    if (!added.ok) throw new Error('add failed');
+    await deliverPending(db());
+    const email = transport.sent.find((m) => m.to === address)!;
+    const token = new URLSearchParams(new URL(email.text.match(/https?:\S+/)![0]).hash.slice(1)).get('token')!;
+    // Only the button (a POST to the confirm action) confirms; nothing else touches the row.
+    const [before] = await db()<{ confirmed_at: Date | null }[]>`select confirmed_at from allset.notification_recipients where id = ${added.id}`;
+    expect(before?.confirmed_at).toBeNull();
+    expect(await confirmRecipient(db(), 'not-the-token')).toBe('invalid');
+    await db()`update allset.notification_recipients set confirm_expires_at = now() - interval '1 minute' where id = ${added.id}`;
+    expect(await confirmRecipient(db(), token)).toBe('invalid');
+    await db()`update allset.notification_recipients set disabled_at = now() where id = ${added.id}`;
+  });
+
   it('rejects duplicate and malformed recipient addresses', async () => {
     const actor = await owner();
     const address = uniqueEmail('dup');
@@ -122,18 +141,99 @@ describeDb('alerts', () => {
     await db()`update allset.notification_recipients set disabled_at = now() where lower(email) = lower(${address})`;
   });
 
-  it('marks alerts delivered or bounced from provider events', async () => {
+  async function sentNotification(): Promise<{ id: string; messageId: string }> {
     const [recipient] = await db()<{ id: string }[]>`
       insert into allset.notification_recipients (email, confirmed_at, disabled_at) values (${uniqueEmail('hook')}, now(), now()) returning id`;
     const messageId = `msg_${crypto.randomUUID()}`;
     const [n] = await db()<{ id: string }[]>`
       insert into allset.notifications (kind, recipient_id, status, provider_message_id)
       values ('recipient_confirmation', ${recipient!.id}, 'sent', ${messageId}) returning id`;
-    expect(await applyDeliveryEvent(db(), { type: 'email.delivered', data: { email_id: messageId } })).toBe('updated');
-    expect(await applyDeliveryEvent(db(), { type: 'email.bounced', data: { email_id: messageId } })).toBe('updated');
-    const [row] = await db()<{ status: string; last_error: string }[]>`select status, last_error from allset.notifications where id = ${n!.id}`;
+    return { id: n!.id, messageId };
+  }
+  const statusOf = async (id: string) =>
+    (await db()<{ status: string }[]>`select status from allset.notifications where id = ${id}`)[0]?.status;
+  const event = (type: string, messageId: string) => ({ type, data: { email_id: messageId } });
+
+  it('moves an accepted alert through delayed to delivered, and never backwards', async () => {
+    const n = await sentNotification();
+    expect(await applyDeliveryEvent(db(), event('email.delivery_delayed', n.messageId), `evt_${crypto.randomUUID()}`)).toBe('updated');
+    expect(await statusOf(n.id)).toBe('delayed');
+    expect(await applyDeliveryEvent(db(), event('email.delivered', n.messageId), `evt_${crypto.randomUUID()}`)).toBe('updated');
+    expect(await statusOf(n.id)).toBe('delivered');
+    // A late or reordered event doesn't undo delivery.
+    expect(await applyDeliveryEvent(db(), event('email.delivery_delayed', n.messageId), `evt_${crypto.randomUUID()}`)).toBe('stale');
+    expect(await applyDeliveryEvent(db(), event('email.bounced', n.messageId), `evt_${crypto.randomUUID()}`)).toBe('stale');
+    expect(await statusOf(n.id)).toBe('delivered');
+  });
+
+  it('applies each provider event once, however many times it arrives', async () => {
+    const n = await sentNotification();
+    const id = `evt_${crypto.randomUUID()}`;
+    expect(await applyDeliveryEvent(db(), event('email.bounced', n.messageId), id)).toBe('updated');
+    expect(await applyDeliveryEvent(db(), event('email.bounced', n.messageId), id)).toBe('duplicate');
+    const [row] = await db()<{ status: string; last_error: string }[]>`select status, last_error from allset.notifications where id = ${n.id}`;
     expect(row).toMatchObject({ status: 'bounced', last_error: expect.stringMatching(/bounced/) });
-    expect(await applyDeliveryEvent(db(), { type: 'email.delivered', data: { email_id: 'msg_unknown' } })).toBe('unknown_message');
+  });
+
+  it('asks for a retry when an event names a message it has not recorded yet', async () => {
+    const eventId = `evt_${crypto.randomUUID()}`;
+    expect(await applyDeliveryEvent(db(), event('email.delivered', 'msg_unknown'), eventId)).toBe('unknown_message');
+    // Nothing was recorded, so the provider's retry will be processed.
+    expect(await db()`select 1 from allset.webhook_events where event_id = ${eventId}`).toHaveLength(0);
+  });
+
+  it('records a spam complaint without pretending the alert was not delivered', async () => {
+    const n = await sentNotification();
+    await applyDeliveryEvent(db(), event('email.delivered', n.messageId), `evt_${crypto.randomUUID()}`);
+    expect(await applyDeliveryEvent(db(), event('email.complained', n.messageId), `evt_${crypto.randomUUID()}`)).toBe('updated');
+    const [row] = await db()<{ status: string; last_error: string }[]>`select status, last_error from allset.notifications where id = ${n.id}`;
+    expect(row).toMatchObject({ status: 'delivered', last_error: expect.stringMatching(/spam/) });
+  });
+
+  it('keeps one idempotency key and one confirmation link across retries', async () => {
+    const actor = await owner();
+    const flaky = new Recorder(new DeliveryError('Could not reach the email provider (network error or timeout).', true));
+    const seen: OutgoingEmail[] = [];
+    setTransportForTests({
+      send: async (email) => {
+        seen.push(email);
+        return flaky.send(email);
+      },
+    });
+    const added = await addRecipient(db(), actor, uniqueEmail('stable'));
+    if (!added.ok) throw new Error('add failed');
+    await deliverPending(db());
+    await db()`update allset.notifications set next_attempt_at = now() where recipient_id = ${added.id}`;
+    const recorder = new Recorder();
+    setTransportForTests({
+      send: async (email) => {
+        seen.push(email);
+        return recorder.send(email);
+      },
+    });
+    await deliverPending(db());
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.idempotencyKey).toBe(seen[0]!.idempotencyKey);
+    expect(seen[1]!.text).toBe(seen[0]!.text);
+    // The link from the first (possibly delivered) attempt still confirms.
+    const token = new URLSearchParams(new URL(seen[0]!.text.match(/https?:\S+/)![0]).hash.slice(1)).get('token')!;
+    expect(await confirmRecipient(db(), token)).toBe('confirmed');
+    await db()`update allset.notification_recipients set disabled_at = now() where id = ${added.id}`;
+  });
+
+  it('waits at least as long as the provider asks after a 429', async () => {
+    const actor = await owner();
+    setTransportForTests(new Recorder(new DeliveryError('The email provider is busy or unavailable. (HTTP 429)', true, 45 * 60)));
+    const added = await addRecipient(db(), actor, uniqueEmail('limited'));
+    if (!added.ok) throw new Error('add failed');
+    const before = Date.now();
+    await deliverPending(db());
+    const [row] = await db()<{ status: string; next_attempt_at: Date }[]>`
+      select status, next_attempt_at from allset.notifications where recipient_id = ${added.id}`;
+    expect(row?.status).toBe('pending');
+    // The first backoff step is 1 minute; the provider asked for 45.
+    expect(row!.next_attempt_at.getTime() - before).toBeGreaterThanOrEqual(44 * 60 * 1000);
+    await db()`update allset.notification_recipients set disabled_at = now() where id = ${added.id}`;
   });
 
   it('stops queuing alert emails past the hourly ceiling, and records that it did', async () => {
@@ -173,4 +273,14 @@ it('verifies Svix webhook signatures and rejects tampering and replays', () => {
   expect(verifySvixSignature(secret, headers(now, sign(payload, now)), payload.replace('abc', 'xyz'), now)).toBe(false);
   expect(verifySvixSignature(secret, headers(now - 3600, sign(payload, now - 3600)), payload, now)).toBe(false);
   expect(verifySvixSignature(secret, { id: null, timestamp: null, signature: null }, payload, now)).toBe(false);
+});
+
+it('reads Retry-After as seconds or a date, and ignores nonsense', () => {
+  const now = Date.parse('2026-09-26T12:00:00Z');
+  expect(parseRetryAfter('120', now)).toBe(120);
+  expect(parseRetryAfter('Sat, 26 Sep 2026 12:05:00 GMT', now)).toBe(300);
+  expect(parseRetryAfter('Sat, 26 Sep 2026 11:00:00 GMT', now)).toBeNull();
+  expect(parseRetryAfter('soon', now)).toBeNull();
+  expect(parseRetryAfter(null, now)).toBeNull();
+  expect(parseRetryAfter('999999', now)).toBe(6 * 60 * 60);
 });

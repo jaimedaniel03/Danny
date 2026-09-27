@@ -14,8 +14,12 @@ export PUBLIC_BASE_URL="http://localhost:${PORT}"
 export ADMIN_SETUP_TOKEN="e2e-only-setup-token-0123456789abcdef"
 export E2E_SETUP_TOKEN="$ADMIN_SETUP_TOKEN"
 export CRON_SECRET="e2e-only-cron-secret-0123456789"
-# The business facts are not verified yet, so forms are closed by default; open them for the run.
-export ALLOW_PRELAUNCH_INQUIRIES="true"
+# The business facts aren't verified yet, so the public forms are closed. The
+# suite tests them as a signed-in staff member on a preview (made-up data only).
+export INTAKE_PREVIEW="true"
+# Tests give each request its own x-real-ip so per-IP limits don't collide.
+# Only safe behind a proxy that sets these headers itself (as Vercel's edge does).
+export TRUST_PROXY_IP_HEADERS="true"
 # Email deliberately unconfigured: the suite proves failures are visible.
 unset RESEND_API_KEY NOTIFY_FROM RESEND_WEBHOOK_SECRET SITE_INDEXABLE
 

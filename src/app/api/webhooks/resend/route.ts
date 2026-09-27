@@ -28,9 +28,20 @@ export async function POST(request: Request): Promise<Response> {
   );
   if (!valid) return NextResponse.json({ error: 'invalid signature' }, { status: 401, headers: NO_STORE });
 
+  let event: Parameters<typeof applyDeliveryEvent>[1];
   try {
-    const outcome = await applyDeliveryEvent(db(), JSON.parse(payload) as Parameters<typeof applyDeliveryEvent>[1]);
+    event = JSON.parse(payload) as Parameters<typeof applyDeliveryEvent>[1];
+  } catch {
+    return NextResponse.json({ error: 'invalid body' }, { status: 400, headers: NO_STORE });
+  }
+
+  try {
+    const outcome = await applyDeliveryEvent(db(), event, request.headers.get('svix-id') ?? '');
     log.info('webhook.resend', { outcome });
+    // Not known yet (the event beat our own write): ask the provider to retry.
+    if (outcome === 'unknown_message') {
+      return NextResponse.json({ ok: false, outcome }, { status: 409, headers: { ...NO_STORE, 'Retry-After': '60' } });
+    }
     return NextResponse.json({ ok: true, outcome }, { headers: NO_STORE });
   } catch (error) {
     log.error('webhook.resend_failed', error);

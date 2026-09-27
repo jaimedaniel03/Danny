@@ -6,7 +6,21 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { closeDb, db, fillCoverage, referenceFromSuccess, searchLeads, uniqueEmail, useFreshIp, waitLikeAPerson } from './helpers';
+import {
+  closeDb,
+  confirmationToken,
+  db,
+  enrollTwoStep,
+  fillCoverage,
+  freshCode,
+  referenceFromSuccess,
+  searchLeads,
+  signInWithCode,
+  TESTER_STATE,
+  uniqueEmail,
+  useFreshIp,
+  waitLikeAPerson,
+} from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -19,10 +33,14 @@ let owner: Page;
 let staffContext: BrowserContext;
 let staff: Page;
 let inviteLink = '';
+let ownerSecret = '';
+let staffSecret = '';
+let staffRecoveryCodes: readonly string[] = [];
 const leads: { reference: string; email: string }[] = [];
 
+/** Leads come in through the form, sent by the synthetic preview tester (staff-only before launch). */
 async function submitLead(browser: Browser, name: string): Promise<{ reference: string; email: string }> {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ storageState: TESTER_STATE });
   const page = await context.newPage();
   await useFreshIp(page);
   const email = uniqueEmail('desk');
@@ -85,13 +103,29 @@ test('the first owner is created with the setup code, and setup then closes', as
   await owner.getByLabel('Email').fill(OWNER.email);
   await owner.getByLabel('Password').fill(OWNER.password);
   await owner.getByRole('button', { name: 'Create owner account' }).click();
-  await expect(owner).toHaveURL(/\/admin$/);
+  // Nothing else is reachable until two-step sign-in is set up.
+  await expect(owner).toHaveURL(/\/admin\/two-step$/);
+  await owner.goto('/admin/leads');
+  await expect(owner).toHaveURL(/\/admin\/two-step$/);
+  ownerSecret = (await enrollTwoStep(owner)).secret;
   await expect(owner.locator('h1')).toHaveText('Today');
 
   const anon = await browser.newPage();
   await anon.goto('/admin/setup');
   await expect(anon.getByText(/Setup is closed/)).toBeVisible();
   await anon.close();
+
+  // The owner can now sign in anywhere with the password and a code.
+  const elsewhere = await browser.newContext();
+  const second = await elsewhere.newPage();
+  await useFreshIp(second);
+  await signInWithCode(second, OWNER.email, OWNER.password, ownerSecret);
+  await expect(second.locator('h1')).toHaveText('Today');
+  // A full sign-in remembers the browser: its own sign-in budget from now on.
+  const device = (await elsewhere.cookies()).find((c) => c.name.includes('asc_device'));
+  expect(device).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Strict' });
+  expect(device!.name.startsWith('__Host-')).toBe(true);
+  await elsewhere.close();
 });
 
 test('the session cookie is HttpOnly, SameSite=Lax, and host-only', async () => {
@@ -135,29 +169,95 @@ test('the owner sees that alerts are not configured, and a failed alert is liste
 
 test('the owner invites a staff member, who sets their own password', async ({ browser }) => {
   await owner.goto('/admin/team');
-  await owner.getByLabel('Name').fill(STAFF.name);
-  await owner.getByLabel('Email').fill(STAFF.email);
-  await owner.getByLabel('Role').selectOption('staff');
-  await owner.getByRole('button', { name: 'Create account and get link' }).click();
-  inviteLink = (await owner.getByLabel('One-time link').innerText()).trim();
+  const inviteForm = owner.getByRole('form', { name: 'Invite a team member' });
+  await inviteForm.getByLabel('Name').fill(STAFF.name);
+  await inviteForm.getByLabel('Email').fill(STAFF.email);
+  await inviteForm.getByLabel('Role').selectOption('staff');
+  await inviteForm.getByRole('button', { name: 'Create account and get link' }).click();
+  inviteLink = (await inviteForm.getByLabel('One-time link').innerText()).trim();
   // The token rides in the fragment, so it never reaches a server log or a Referer header.
   expect(inviteLink).toMatch(/\/admin\/invite#token=/);
+
+  // A mail scanner (or a preview pane) that opens the link, scripts and all, doesn't use it up.
+  const scanner = await browser.newPage();
+  await scanner.goto(new URL(inviteLink).pathname + new URL(inviteLink).hash);
+  await expect(scanner.getByText(`Welcome, ${STAFF.name}`)).toBeVisible();
+  await scanner.close();
 
   staffContext = await browser.newContext();
   staff = await staffContext.newPage();
   await useFreshIp(staff);
   await staff.goto(new URL(inviteLink).pathname + new URL(inviteLink).hash);
+  // The token is stripped from the address bar once read.
+  await expect(staff.getByLabel('New password')).toBeVisible();
+  expect(new URL(staff.url()).hash).toBe('');
   await staff.getByLabel('New password').fill(STAFF.password);
   await staff.getByLabel('Type it again').fill(STAFF.password);
   await staff.getByRole('button', { name: 'Set password and sign in' }).click();
-  await expect(staff).toHaveURL(/\/admin$/);
+  const enrolled = await enrollTwoStep(staff);
+  staffSecret = enrolled.secret;
+  staffRecoveryCodes = enrolled.recoveryCodes;
+  expect(staffRecoveryCodes).toHaveLength(10);
   await expect(staff.getByText(`${STAFF.name} · Staff`)).toBeVisible();
 
   // The link works once.
   const reuse = await browser.newPage();
   await reuse.goto(new URL(inviteLink).pathname + new URL(inviteLink).hash);
   await expect(reuse.getByText(/expired or was already used/)).toBeVisible();
+  await reuse.goto('/admin/invite#token=not-a-real-token');
+  await expect(reuse.getByText(/expired or was already used/)).toBeVisible();
   await reuse.close();
+});
+
+test('signing in takes the password and then a fresh code; a wrong code is refused', async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await useFreshIp(page);
+  await page.goto('/admin/login');
+  await page.getByLabel('Email').fill(STAFF.email);
+  await page.getByLabel('Password').fill(STAFF.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/admin\/login\/verify/);
+  // The password alone opens nothing.
+  await page.goto('/admin/leads');
+  await expect(page).toHaveURL(/\/admin\/login/);
+  await page.goto('/admin/login/verify');
+  await page.getByLabel('6-digit code').fill('000000');
+  await page.getByRole('button', { name: 'Verify and sign in' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'That code isn’t right' })).toBeVisible();
+  await page.getByLabel('6-digit code').fill(await freshCode(staffSecret));
+  await page.getByRole('button', { name: 'Verify and sign in' }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await context.close();
+});
+
+test('a recovery code signs in once, and says how many are left', async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await useFreshIp(page);
+  await page.goto('/admin/login');
+  await page.getByLabel('Email').fill(STAFF.email);
+  await page.getByLabel('Password').fill(STAFF.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByText('Use a recovery code instead').click();
+  await page.getByLabel('Recovery code').fill(staffRecoveryCodes[0]!);
+  await page.getByRole('button', { name: 'Verify and sign in' }).click();
+  await expect(page).toHaveURL(/\/admin\/two-step\?recovery_used=9/);
+  await expect(page.getByText(/signed in with a recovery code/)).toBeVisible();
+  await context.close();
+
+  const again = await browser.newContext();
+  const retry = await again.newPage();
+  await useFreshIp(retry);
+  await retry.goto('/admin/login');
+  await retry.getByLabel('Email').fill(STAFF.email);
+  await retry.getByLabel('Password').fill(STAFF.password);
+  await retry.getByRole('button', { name: 'Sign in' }).click();
+  await retry.getByText('Use a recovery code instead').click();
+  await retry.getByLabel('Recovery code').fill(staffRecoveryCodes[0]!);
+  await retry.getByRole('button', { name: 'Verify and sign in' }).click();
+  await expect(retry.getByRole('alert').filter({ hasText: 'isn’t valid or was already used' })).toBeVisible();
+  await again.close();
 });
 
 test('staff cannot reach owner pages or owner endpoints', async () => {
@@ -245,7 +345,7 @@ test('the owner searches, filters, reassigns and exports', async () => {
 
 test('a repeat request with new details is held for review until the owner confirms it', async ({ browser }) => {
   const first = await submitLead(browser, 'Changed Family');
-  const context = await browser.newContext();
+  const context = await browser.newContext({ storageState: TESTER_STATE });
   const page = await context.newPage();
   await useFreshIp(page);
   await page.goto('/contact');
@@ -261,7 +361,10 @@ test('a repeat request with new details is held for review until the owner confi
   await expect(owner.locator('section[aria-labelledby="contact-title"]')).toContainText('(312) 555-0177');
 
   await owner.getByRole('form', { name: `Use details from ${second}` }).getByRole('button', { name: 'Use these details' }).click();
-  await expect(owner.getByText('Contact details updated from that request.')).toBeVisible();
+  // The button that was used is gone, so the confirmation is announced and takes focus.
+  const done = owner.getByRole('status').filter({ hasText: 'Contact details updated from that request.' });
+  await expect(done).toBeVisible();
+  await expect(done).toBeFocused();
   await expect(owner.getByText('A later request has different details.')).toBeHidden();
   const [row] = await db()<{ phone_e164: string; contact_method: string; coverage_interest: string; needs_review: boolean }[]>`
     select phone_e164, contact_method, coverage_interest, needs_review from allset.leads where email = ${first.email}`;
@@ -315,11 +418,7 @@ test('staff password changes sign out other devices; sign-out ends the session',
   const second = await browser.newContext();
   const other = await second.newPage();
   await useFreshIp(other);
-  await other.goto('/admin/login');
-  await other.getByLabel('Email').fill(STAFF.email);
-  await other.getByLabel('Password').fill(STAFF.password);
-  await other.getByRole('button', { name: 'Sign in' }).click();
-  await expect(other).toHaveURL(/\/admin$/);
+  await signInWithCode(other, STAFF.email, STAFF.password, staffSecret);
 
   await staff.goto('/admin/account');
   await staff.getByLabel('Current password').fill(STAFF.password);
@@ -339,6 +438,119 @@ test('staff password changes sign out other devices; sign-out ends the session',
   expect(leftover).toEqual([]);
   await staff.goto('/admin');
   await expect(staff).toHaveURL(/\/admin\/login/);
+});
+
+test('an owner-issued password reset still needs the second step', async ({ browser }) => {
+  await owner.goto('/admin/team');
+  const form = owner.getByRole('form', { name: `Reset password for ${STAFF.name}` });
+  await form.getByRole('button', { name: 'Issue reset link' }).click();
+  const link = (await form.getByLabel('One-time link').innerText()).trim();
+  expect(link).toMatch(/\/admin\/invite#token=/);
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await useFreshIp(page);
+  await page.goto(new URL(link).pathname + new URL(link).hash);
+  await page.getByLabel('New password').fill('sam reset long password here');
+  await page.getByLabel('Type it again').fill('sam reset long password here');
+  await page.getByRole('button', { name: 'Set password and sign in' }).click();
+  // The link alone is not a sign-in: the code is still required.
+  await expect(page).toHaveURL(/\/admin\/login\?password_set=1/);
+  await expect(page.getByText(/new password is set/)).toBeVisible();
+  await signInWithCode(page, STAFF.email, 'sam reset long password here', staffSecret);
+  await expect(page.getByText(`${STAFF.name} · Staff`)).toBeVisible();
+  await context.close();
+});
+
+test('an owner resets someone’s two-step sign-in, and they set it up again', async ({ browser }) => {
+  await owner.goto('/admin/team');
+  await owner.getByRole('form', { name: `Reset two-step sign-in for ${STAFF.name}` }).getByRole('button', { name: 'Reset two-step sign-in' }).click();
+  const done = owner.getByRole('status').filter({ hasText: /Two-step sign-in was reset/ });
+  await expect(done).toBeVisible();
+  await expect(done).toBeFocused();
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await useFreshIp(page);
+  await page.goto('/admin/login');
+  await page.getByLabel('Email').fill(STAFF.email);
+  await page.getByLabel('Password').fill('sam reset long password here');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  staffSecret = (await enrollTwoStep(page)).secret;
+  await context.close();
+});
+
+test('alert-confirmation links: loading never confirms, the button does once, bad or old links are refused', async ({ browser }) => {
+  const address = uniqueEmail('confirm-me');
+  await owner.goto('/admin/alerts');
+  await owner.getByLabel('Email address', { exact: true }).fill(address);
+  await owner.getByRole('button', { name: 'Add and send confirmation' }).click();
+  await expect(owner.getByText(/A confirmation email is on its way/)).toBeVisible();
+  // Email isn't configured here, so read the link the app derived for that email instead.
+  let notificationId = '';
+  await expect
+    .poll(async () => {
+      const [row] = await db()<{ id: string; hash: string | null }[]>`
+        select n.id, r.confirm_token_hash as hash from allset.notifications n
+        join allset.notification_recipients r on r.id = n.recipient_id
+        where lower(r.email) = lower(${address}) and n.kind = 'recipient_confirmation'`;
+      notificationId = row?.hash ? row.id : '';
+      return notificationId;
+    }, { timeout: 15_000 })
+    .not.toBe('');
+  const token = confirmationToken(notificationId);
+  const confirmed = async () =>
+    (await db()<{ confirmed_at: Date | null }[]>`select confirmed_at from allset.notification_recipients where lower(email) = lower(${address})`)[0]?.confirmed_at ?? null;
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  // Each visit is a fresh page load, as clicking a link in an email is. (Changing only the
+  // #fragment of the current address would not reload the page.)
+  const open = async (link: string) => {
+    await page.goto('about:blank');
+    await page.goto(link);
+  };
+  const confirmButton = page.getByRole('button', { name: 'Yes, send me new-inquiry alerts' });
+  // Opening the link (what a mail scanner does) changes nothing, however often.
+  await open(`/admin/confirm-alert#token=${token}`);
+  await expect(confirmButton).toBeVisible();
+  await open(`/admin/confirm-alert#token=${token}`);
+  await expect(confirmButton).toBeVisible();
+  expect(await confirmed()).toBeNull();
+  // Under the production CSP, the page's script read the token and the button works.
+  await confirmButton.click();
+  await expect(page.getByText(/Confirmed\. This address will now receive an email/)).toBeVisible();
+  expect(await confirmed()).toBeInstanceOf(Date);
+  // Used once.
+  await open(`/admin/confirm-alert#token=${token}`);
+  await confirmButton.click();
+  await expect(page.getByRole('alert').filter({ hasText: 'expired or was already used' })).toBeVisible();
+  // Made up.
+  await open('/admin/confirm-alert#token=not-a-real-token');
+  await confirmButton.click();
+  await expect(page.getByRole('alert').filter({ hasText: 'expired or was already used' })).toBeVisible();
+  // Expired: a fresh link whose time has run out.
+  await db()`update allset.notification_recipients set confirmed_at = null, confirm_expires_at = now() - interval '1 minute', confirm_token_hash = encode(sha256(${token}::bytea), 'hex') where lower(email) = lower(${address})`;
+  await open(`/admin/confirm-alert#token=${token}`);
+  await confirmButton.click();
+  await expect(page.getByRole('alert').filter({ hasText: 'expired or was already used' })).toBeVisible();
+  expect(await confirmed()).toBeNull();
+  await context.close();
+  // Stop alerting this test address.
+  await db()`update allset.notification_recipients set disabled_at = now() where lower(email) = lower(${address})`;
+});
+
+test('exports are limited per owner, and the limit answers 429 with Retry-After', async () => {
+  const origin = new URL(owner.url()).origin;
+  let last = 0;
+  let retryAfter: string | undefined;
+  for (let i = 0; i < 12 && last !== 429; i += 1) {
+    const res = await owner.request.post('/api/admin/export', { headers: { origin }, form: { status: 'all' } });
+    last = res.status();
+    retryAfter = res.headers()['retry-after'];
+  }
+  expect(last).toBe(429);
+  expect(Number(retryAfter)).toBeGreaterThan(0);
 });
 
 test('the launch checklist shows the site is not ready and why', async () => {

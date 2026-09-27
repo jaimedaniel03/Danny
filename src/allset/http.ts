@@ -5,14 +5,22 @@
 
 import 'server-only';
 import { safeEqual } from '@/allset/crypto';
+import { publicBaseUrl } from '@/allset/env';
 
-/** True when a state-changing request came from this site's own pages. */
+/**
+ * True when a state-changing request came from this site's own pages: the
+ * Origin header must name this site. "This site" is PUBLIC_BASE_URL when set,
+ * otherwise the host the request was addressed to. X-Forwarded-Host is never
+ * consulted: off a trusted platform it is whatever the client sent.
+ */
 export function isSameOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  if (!origin || !host) return false;
+  if (!origin) return false;
+  const configured = publicBaseUrl();
+  let expected: string;
   try {
-    return new URL(origin).host === host;
+    expected = configured ? new URL(configured).host : (request.headers.get('host') ?? '');
+    return Boolean(expected) && new URL(origin).host === expected;
   } catch {
     return false;
   }

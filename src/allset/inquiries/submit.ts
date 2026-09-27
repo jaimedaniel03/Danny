@@ -27,6 +27,8 @@ export interface SubmitContext {
   readonly ipHash: string;
   readonly userAgent: string | null;
   readonly sourcePath: string;
+  /** A staff-only preview submission (made-up details). */
+  readonly synthetic?: boolean;
 }
 
 export type SubmitOutcome =
@@ -72,6 +74,7 @@ export async function submitInquiry(
     fullName: inquiry.fullName,
     email: inquiry.email,
     zip: inquiry.zip,
+    state: inquiry.state,
     contactMethod: inquiry.contactMethod,
     phone: inquiry.phoneE164,
     coverageInterest: inquiry.coverageInterest,
@@ -97,24 +100,25 @@ export async function submitInquiry(
         // inquiry, and the lead is flagged for a person to compare.
         const [lead] = await tx<{ id: string; inserted: boolean }[]>`
           insert into allset.leads (
-            kind, full_name, email, email_normalized, zip, contact_method, phone_e164,
-            coverage_interest, licensing_status, suppression_match
+            kind, full_name, email, email_normalized, zip, state, contact_method, phone_e164,
+            coverage_interest, licensing_status, suppression_match, is_synthetic
           ) values (
             ${inquiry.kind}, ${inquiry.fullName}, ${inquiry.email}, ${inquiry.emailNormalized}, ${inquiry.zip},
-            ${inquiry.contactMethod}, ${inquiry.phoneE164}, ${inquiry.coverageInterest}, ${inquiry.licensingStatus},
-            ${suppressed}
+            ${inquiry.state}, ${inquiry.contactMethod}, ${inquiry.phoneE164}, ${inquiry.coverageInterest},
+            ${inquiry.licensingStatus}, ${suppressed}, ${ctx.synthetic === true}
           )
           on conflict (kind, email_normalized) where closed_at is null
           do update set
             submission_count = allset.leads.submission_count + 1,
             needs_review = allset.leads.needs_review or (
-              (allset.leads.full_name, allset.leads.zip, allset.leads.contact_method, allset.leads.phone_e164,
-               allset.leads.coverage_interest, allset.leads.licensing_status)
+              (allset.leads.full_name, allset.leads.zip, allset.leads.state, allset.leads.contact_method,
+               allset.leads.phone_e164, allset.leads.coverage_interest, allset.leads.licensing_status)
               is distinct from
-              (excluded.full_name, excluded.zip, excluded.contact_method, excluded.phone_e164,
-               excluded.coverage_interest, excluded.licensing_status)
+              (excluded.full_name, excluded.zip, excluded.state, excluded.contact_method,
+               excluded.phone_e164, excluded.coverage_interest, excluded.licensing_status)
             ),
             suppression_match = allset.leads.suppression_match or excluded.suppression_match,
+            is_synthetic = allset.leads.is_synthetic or excluded.is_synthetic,
             last_submitted_at = now(),
             last_activity_at = now(),
             updated_at = now()
@@ -124,10 +128,11 @@ export async function submitInquiry(
         const saved = await tx<{ reference: string }[]>`
           insert into allset.inquiries (
             reference, idempotency_key, lead_id, kind, payload,
-            consent_text, consent_version, consented_at, source_path, ip_hash, user_agent
+            consent_text, consent_version, consented_at, consent_channels, source_path, ip_hash, user_agent
           ) values (
             ${reference}, ${idempotencyKey}, ${lead.id}, ${inquiry.kind}, ${tx.json(JSON.parse(JSON.stringify(payload)) as Record<string, string | boolean | null>)},
-            ${consent.text}, ${consent.version}, now(), ${ctx.sourcePath}, ${ctx.ipHash}, ${ctx.userAgent}
+            ${consent.text}, ${consent.version}, now(), ${[inquiry.contactMethod]}, ${ctx.sourcePath},
+            ${ctx.ipHash}, ${ctx.userAgent}
           )
           on conflict (idempotency_key) do nothing
           returning reference`;

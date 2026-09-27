@@ -17,6 +17,7 @@ async function insertLead(email: string, overrides: Record<string, unknown> = {}
     email,
     email_normalized: email.toLowerCase(),
     zip: '60601',
+    state: 'IL',
     contact_method: 'email',
     coverage_interest: 'life',
     ...overrides,
@@ -72,6 +73,7 @@ describeDb('allset schema guarantees', () => {
         consent_text: 'I agree.',
         consent_version: 'test-v1',
         consented_at: new Date(),
+        consent_channels: sql.array(['email']),
         source_path: '/contact',
       })}
       returning id`;
@@ -81,6 +83,40 @@ describeDb('allset schema guarantees', () => {
     await sql`delete from allset.leads where id = ${leadId}`;
     const remaining = await sql`select 1 from allset.inquiries where id = ${inquiry!.id}`;
     expect(remaining).toHaveLength(0);
+  });
+
+  it('records consent channels only from the allowed set', async () => {
+    const sql = db();
+    const leadId = await insertLead(uniqueEmail());
+    const row = (channels: string[]) => ({
+      reference: `ASC-${Math.random().toString(36).slice(2, 6).toUpperCase().replace(/[ILOU]/g, 'A')}-AB12`,
+      idempotency_key: crypto.randomUUID(),
+      lead_id: leadId,
+      kind: 'coverage',
+      payload: sql.json({ zip: '60601' }),
+      consent_text: 'I agree.',
+      consent_version: 'test-v1',
+      consented_at: new Date(),
+      consent_channels: sql.array(channels),
+      source_path: '/contact',
+    });
+    await expect(sql`insert into allset.inquiries ${sql(row(['fax']))}`).rejects.toMatchObject({ code: '23514' });
+    await expect(sql`insert into allset.inquiries ${sql(row([]))}`).rejects.toMatchObject({ code: '23514' });
+    await sql`delete from allset.leads where id = ${leadId}`;
+  });
+
+  it('accepts a do-not-contact entry only with a stated basis', async () => {
+    const sql = db();
+    await expect(
+      sql`insert into allset.contact_suppressions (value_hash, kind, basis) values (${crypto.randomUUID()}, 'email', 'just_because')`,
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      sql`insert into allset.contact_suppressions (value_hash, kind) values (${crypto.randomUUID()}, 'email')`,
+    ).rejects.toMatchObject({ code: '23502' });
+  });
+
+  it('refuses a lead without a valid state', async () => {
+    await expect(insertLead(uniqueEmail(), { state: 'Illinois' })).rejects.toMatchObject({ code: '23514' });
   });
 
   it('keeps the audit trail append-only', async () => {
@@ -118,10 +154,34 @@ describeDb('access boundary', () => {
     await outsider?.end();
   });
 
-  it('gives a role without the app grant no way into the schema', async () => {
-    await expect(outsider!`select * from allset.leads`).rejects.toMatchObject({ code: '42501' });
-    await expect(outsider!`select * from allset.staff_users`).rejects.toMatchObject({
-      code: '42501',
-    });
+  it('gives a role without the app grant no way into any table', async () => {
+    const tables = [
+      'staff_users', 'staff_sessions', 'staff_devices', 'staff_mfa_challenges', 'staff_recovery_codes',
+      'leads', 'inquiries', 'lead_notes', 'audit_events', 'rate_limits', 'notification_recipients',
+      'notifications', 'webhook_events', 'contact_suppressions',
+    ];
+    for (const table of tables) {
+      await expect(outsider!.unsafe(`select * from allset.${table} limit 1`), table).rejects.toMatchObject({ code: '42501' });
+      await expect(outsider!.unsafe(`delete from allset.${table}`), table).rejects.toMatchObject({ code: '42501' });
+    }
+  });
+
+  it('forces row-level security on every table, with a policy only for the app role', async () => {
+    const admin = postgres(process.env['ALLSET_TEST_ADMIN_URL']!, { max: 1, onnotice: () => {} });
+    try {
+      const rows = await admin<{ relname: string; rls: boolean; forced: boolean; policies: string[] }[]>`
+        select c.relname, c.relrowsecurity as rls, c.relforcerowsecurity as forced,
+               coalesce(array_agg(p.polname) filter (where p.polname is not null), '{}') as policies
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        left join pg_policy p on p.polrelid = c.oid
+        where n.nspname = 'allset' and c.relkind = 'r'
+        group by c.relname, c.relrowsecurity, c.relforcerowsecurity`;
+      expect(rows.length).toBeGreaterThanOrEqual(14);
+      for (const row of rows) {
+        expect(row, row.relname).toMatchObject({ rls: true, forced: true, policies: ['allset_app_only'] });
+      }
+    } finally {
+      await admin.end();
+    }
   });
 });

@@ -49,7 +49,7 @@ export default async function ContactPage() {
           <div className={styles.formColumn}>
             <InquiryForm
               action={submitCoverageInquiry}
-              initialState={initialInquiryState('coverage')}
+              initialState={await initialInquiryState('coverage')}
               consentText={consent.text}
               successNextSteps={NEXT_STEPS}
             />

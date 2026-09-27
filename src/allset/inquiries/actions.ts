@@ -17,7 +17,8 @@ import { readValues, validateInquiry } from './fields';
 import { checkFormToken, issueFormToken } from './form-token';
 import type { InquiryState } from './state';
 import { isIdempotencyKey, submitInquiry } from './submit';
-import { inquiriesOpen } from './gate';
+import { intakeMode } from './gate';
+import { checkEligibility } from './eligibility';
 
 const SOURCE_PATH: Record<InquiryKind, string> = { coverage: '/contact', team: '/team' };
 
@@ -31,12 +32,13 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
   const submittedKey = field(form, 'idempotencyKey', 64);
   const idempotencyKey = isIdempotencyKey(submittedKey) ? submittedKey : crypto.randomUUID();
   const attempt = (previous?.attempt ?? 0) + 1;
-  const base = { kind, idempotencyKey, attempt };
   const noun = kind === 'coverage' ? 'request' : 'inquiry';
 
-  // Closed before launch unless deliberately opened for a private preview.
-  // Checked here, not only by hiding the form.
-  if (!inquiriesOpen()) {
+  // Closed until launch (or a staff-only preview). Checked here, on every
+  // submission, not only by hiding the form.
+  const mode = await intakeMode();
+  const base = { kind, idempotencyKey, attempt, preview: mode === 'preview' };
+  if (mode === 'closed') {
     return { ...base, formToken: '', status: 'closed' };
   }
 
@@ -84,6 +86,16 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
     return { ...base, formToken, status: 'invalid', errors: verdict.errors, values };
   }
 
+  // Real requests only from states (and, for coverage, lines) we're licensed
+  // for. A staff preview skips this: its details are made up by design.
+  if (mode === 'open') {
+    const eligibility = checkEligibility(verdict.inquiry);
+    if (!eligibility.ok) {
+      log.info('inquiry.ineligible', { kind });
+      return { ...base, formToken, status: 'ineligible', message: eligibility.message, values };
+    }
+  }
+
   try {
     const ctx = await requestContext();
     const outcome = await submitInquiry(db(), verdict.inquiry, idempotencyKey, {
@@ -91,6 +103,7 @@ async function handle(kind: InquiryKind, previous: InquiryState, form: FormData)
       ipHash: ctx.ipHash,
       userAgent: ctx.userAgent,
       sourcePath: SOURCE_PATH[kind],
+      synthetic: mode === 'preview',
     });
 
     if (outcome.kind === 'rate_limited') {

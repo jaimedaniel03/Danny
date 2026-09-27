@@ -111,16 +111,21 @@ test('security headers are set on public pages', async ({ request }) => {
   expect(headers['x-powered-by']).toBeUndefined();
 });
 
-test('pages that collect personal data run only the scripts each response authorizes', async ({ page }) => {
+test('every page runs only the scripts and styles its own response authorizes', async ({ page }) => {
   const violations: string[] = [];
   page.on('console', (message) => {
-    if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) violations.push(message.text());
+    if (/Content Security Policy/i.test(message.text())) violations.push(`${page.url()}: ${message.text()}`);
   });
   const nonces = new Set<string>();
-  for (const path of ['/contact', '/team', '/contact', '/admin/login', '/admin/invite']) {
+  const paths = [...PUBLIC_ROUTES, '/contact', '/nope', '/admin/login', '/admin/setup', '/admin/invite#token=x', '/admin/confirm-alert#token=x'];
+  for (const path of paths) {
     const response = await page.goto(path);
+    await page.waitForLoadState('networkidle');
     const csp = response?.headers()['content-security-policy'] ?? '';
-    expect(csp, path).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
+    expect(csp, path).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'(;|$)/);
+    expect(csp, path).toMatch(/style-src 'self' 'nonce-[A-Za-z0-9+/=]+'(;|$)/);
+    expect(csp, path).not.toContain('unsafe-inline');
+    expect(csp, path).not.toContain('unsafe-eval');
     expect(csp, path).toContain("frame-ancestors 'none'");
     const nonce = /'nonce-([^']+)'/.exec(csp)![1]!;
     nonces.add(nonce);
@@ -133,7 +138,7 @@ test('pages that collect personal data run only the scripts each response author
     expect(unsigned, path).toEqual([]);
   }
   // A fresh nonce every time; a reused one would be no protection.
-  expect(nonces.size).toBe(5);
+  expect(nonces.size).toBe(paths.length);
   expect(violations).toEqual([]);
 });
 

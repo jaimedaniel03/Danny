@@ -195,6 +195,9 @@ export default async function TeamPage() {
               {role ? (
                 <>
                   <p>{role.relationship}</p>
+                  <p>
+                    <strong>Supervision:</strong> {role.supervision}
+                  </p>
                   {role.upline ? (
                     <p>
                       <strong>Upline</strong> (the agent or agency you would work under): {role.upline}
@@ -451,7 +454,7 @@ export default async function TeamPage() {
           <div className={layout.formColumn}>
             <InquiryForm
               action={submitTeamInquiry}
-              initialState={initialInquiryState('team')}
+              initialState={await initialInquiryState('team')}
               consentText={consent.text}
               disclosureAckText={TEAM_DISCLOSURE_ACK}
               successNextSteps={NEXT_STEPS}

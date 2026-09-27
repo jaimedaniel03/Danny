@@ -19,7 +19,7 @@ const EMPTY: BusinessFacts = {
 };
 
 function license(state: string, lines: ('life' | 'health')[]) {
-  return { value: { state, holder: 'A. Producer', licenseNumber: `L-${state}`, lines }, ...proof };
+  return { value: { state, holderType: 'individual' as const, holder: 'A. Producer', licenseNumber: `L-${state}`, lines }, ...proof };
 }
 
 describe('business facts', () => {
@@ -57,5 +57,31 @@ describe('business facts', () => {
       legalEntity: { value: { name: 'Example Holdings LLC', entityType: 'LLC', formationState: 'IL' }, ...proof },
     });
     expect(sellerName(facts)).toBe('Example Holdings LLC (All Set Check)');
+  });
+
+  it('requires a licensed person in every served state before the licensing item is done', () => {
+    const agencyOnly = parseFacts({
+      ...EMPTY,
+      licenses: [{ value: { state: 'IL', holderType: 'agency', holder: 'Example Agency', licenseNumber: 'A-1', lines: ['life'] }, ...proof }],
+      serviceArea: { value: { states: ['IL'] }, ...proof },
+    });
+    const withPerson = parseFacts({
+      ...agencyOnly,
+      licenses: [...agencyOnly.licenses, license('IL', ['life'])],
+    });
+    const done = (f: BusinessFacts) => launchChecklist(f).find((i) => i.key === 'licenses')?.done;
+    expect(done(agencyOnly)).toBe(false);
+    expect(done(withPerson)).toBe(true);
+  });
+
+  it('records who verified each fact, when, and from what', () => {
+    const facts = parseFacts({ ...EMPTY, npn: { value: '1234567', ...proof } });
+    expect(launchChecklist(facts).find((i) => i.key === 'npn')?.evidence).toEqual([proof]);
+    expect(launchChecklist(facts).find((i) => i.key === 'legalEntity')?.evidence).toEqual([]);
+  });
+
+  it('requires the NPN, appointments, full contact details and the founders’ story for launch', () => {
+    const required = launchChecklist(EMPTY).filter((i) => i.requiredForLaunch).map((i) => i.key);
+    expect(required).toEqual(expect.arrayContaining(['npn', 'carriers', 'contact', 'founderStory', 'teamRole', 'legalReview']));
   });
 });

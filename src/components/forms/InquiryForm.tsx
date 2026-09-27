@@ -35,6 +35,7 @@ import {
 import type { InquiryState } from '@/allset/inquiries/state';
 import type { Acknowledgment } from '@/allset/inquiries/consent';
 import styles from './InquiryForm.module.css';
+import { US_STATES } from '@/allset/content/states';
 
 type Action = (previous: InquiryState, form: FormData) => Promise<InquiryState>;
 
@@ -50,6 +51,7 @@ const FIELD_IDS: Record<FieldName, string> = {
   fullName: 'inquiry-name',
   email: 'inquiry-email',
   zip: 'inquiry-zip',
+  state: 'inquiry-state',
   contactMethod: 'inquiry-contact-method-email',
   phone: 'inquiry-phone',
   coverageInterest: 'inquiry-interest-life',
@@ -67,6 +69,7 @@ function valuesFromForm(form: FormData): InquiryValues {
     fullName: get('fullName'),
     email: get('email'),
     zip: get('zip'),
+    state: get('state'),
     contactMethod: get('contactMethod'),
     phone: get('phone'),
     coverageInterest: get('coverageInterest'),
@@ -81,6 +84,27 @@ function describedBy(...ids: (string | false | undefined)[]): string | undefined
   return joined || undefined;
 }
 
+/** How long to wait for the server before saying the receipt is unconfirmed. */
+const RECEIPT_TIMEOUT_MS = 20_000;
+
+function unconfirmed(previous: InquiryState, data: FormData): InquiryState {
+  const noun = previous.kind === 'coverage' ? 'request' : 'inquiry';
+  return {
+    kind: previous.kind,
+    idempotencyKey: previous.idempotencyKey,
+    formToken: previous.formToken,
+    attempt: previous.attempt + 1,
+    preview: previous.preview,
+    status: 'error',
+    unconfirmed: true,
+    // It's unknown whether it arrived. The same idempotency key rides on the
+    // retry, and the database refuses a second row for it, so sending again
+    // can't create a duplicate.
+    message: `We didn’t get confirmation that your ${noun} reached us, so there’s no reference number yet. Your details are still here. Check your connection and send it again; if the first one did arrive, sending again won’t create a duplicate.`,
+    values: valuesFromForm(data),
+  };
+}
+
 export function InquiryForm({ action, initialState, consentText, disclosureAckText, successNextSteps }: InquiryFormProps) {
   // Server-driven state: this is what a no-JavaScript POST renders.
   const [serverState, formAction] = useActionState(action, initialState);
@@ -90,11 +114,14 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
   const state = clientState ?? serverState;
 
   const summaryRef = useRef<HTMLDivElement>(null);
+  /** Which submission the page is showing, so a late answer can't overwrite a newer one. */
+  const latestAttempt = useRef(0);
   const successRef = useRef<HTMLHeadingElement>(null);
   const kind = state.kind;
   const noun = kind === 'coverage' ? 'request' : 'inquiry';
 
-  const values: InquiryValues = state.status === 'invalid' || state.status === 'error' ? state.values : EMPTY_VALUES;
+  const values: InquiryValues =
+    state.status === 'invalid' || state.status === 'error' || state.status === 'ineligible' ? state.values : EMPTY_VALUES;
   const errors: FieldErrors = state.status === 'invalid' ? state.errors : {};
   const errorList = FIELD_ORDER.filter((name) => errors[name]);
 
@@ -102,7 +129,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
   useEffect(() => {
     if (state.attempt === 0) return;
     if (state.status === 'success') successRef.current?.focus();
-    else if (state.status === 'invalid' || state.status === 'error') summaryRef.current?.focus();
+    else if (state.status === 'invalid' || state.status === 'error' || state.status === 'ineligible') summaryRef.current?.focus();
   }, [state.attempt, state.status]);
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -110,21 +137,28 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
     if (pending) return;
     const data = new FormData(event.currentTarget);
     const previous = state;
+    const attempt = previous.attempt + 1;
+    latestAttempt.current = attempt;
     startTransition(async () => {
-      try {
-        const next = await action(previous, data);
-        setClientState(next);
-      } catch {
-        setClientState({
-          kind: previous.kind,
-          idempotencyKey: previous.idempotencyKey,
-          formToken: previous.formToken,
-          attempt: previous.attempt + 1,
-          status: 'error',
-          // The response was lost, so it's unknown whether the request arrived. The same
-          // idempotency key rides on the retry, so trying again can't create a duplicate.
-          message: `We couldn't confirm that your ${previous.kind === 'coverage' ? 'request' : 'inquiry'} reached us. Check your connection and try again. Your details are still here, and trying again won't send it twice.`,
-          values: valuesFromForm(data),
+      const request = action(previous, data).then(
+        (next) => ({ next }),
+        () => ({ lost: true as const }),
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), RECEIPT_TIMEOUT_MS);
+      });
+      const first = await Promise.race([request, timeout]);
+      clearTimeout(timer);
+      if ('next' in first) {
+        setClientState(first.next);
+        return;
+      }
+      setClientState(unconfirmed(previous, data));
+      if ('timedOut' in first) {
+        // The answer may still come. If it does, and nothing newer has happened, show it.
+        void request.then((late) => {
+          if ('next' in late && late.next.status === 'success' && latestAttempt.current === attempt) setClientState(late.next);
         });
       }
     });
@@ -136,6 +170,7 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
       idempotencyKey: crypto.randomUUID(),
       formToken: state.formToken,
       attempt: state.attempt + 1,
+      preview: state.preview,
       status: 'idle',
     });
   }
@@ -195,14 +230,31 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
       className={styles.form}
       aria-describedby="inquiry-required-note"
     >
-      {state.status === 'invalid' || state.status === 'error' ? (
-        <div ref={summaryRef} tabIndex={-1} className={`notice notice--error ${styles.summary}`} role="alert" aria-labelledby="inquiry-summary-title">
+      {state.preview ? (
+        <p className="notice notice--warning" role="note">
+          <strong>Test preview.</strong> Only signed-in staff see this form before launch. Use made-up
+          details: everything sent here is stored as test data.
+        </p>
+      ) : null}
+
+      {state.status === 'invalid' || state.status === 'error' || state.status === 'ineligible' ? (
+        <div
+          ref={summaryRef}
+          tabIndex={-1}
+          className={`notice ${state.status === 'ineligible' ? 'notice--warning' : 'notice--error'} ${styles.summary}`}
+          role="alert"
+          aria-labelledby="inquiry-summary-title"
+        >
           <h2 id="inquiry-summary-title" className={styles.summaryTitle}>
             {state.status === 'invalid'
               ? errorList.length === 1
                 ? 'There is 1 thing to fix'
                 : `There are ${errorList.length} things to fix`
-              : `We couldn’t finish sending your ${noun}`}
+              : state.status === 'ineligible'
+                ? 'We can’t take this request in your state'
+                : state.unconfirmed
+                  ? 'Receipt unconfirmed'
+                  : `We couldn’t finish sending your ${noun}`}
           </h2>
           {state.status === 'invalid' ? (
             <ul className={styles.summaryList}>
@@ -308,6 +360,34 @@ export function InquiryForm({ action, initialState, consentText, disclosureAckTe
           aria-invalid={errors.zip ? true : undefined}
           aria-describedby={describedBy('inquiry-zip-hint', errors.zip && 'inquiry-zip-error')}
         />
+      </div>
+
+      <div className={`field ${styles.short}`}>
+        <label className="field__label" htmlFor="inquiry-state">
+          State
+        </label>
+        {errors.state ? (
+          <p className="field__error" id="inquiry-state-error">
+            <span className="visually-hidden">Error:</span> {errors.state}
+          </p>
+        ) : null}
+        <select
+          id="inquiry-state"
+          className="select"
+          name="state"
+          autoComplete="address-level1"
+          defaultValue={values.state}
+          required
+          aria-invalid={errors.state ? true : undefined}
+          aria-describedby={errors.state ? 'inquiry-state-error' : undefined}
+        >
+          <option value="">Choose a state</option>
+          {Object.entries(US_STATES).map(([code, name]) => (
+            <option key={code} value={code}>
+              {name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {kind === 'coverage' ? (

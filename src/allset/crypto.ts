@@ -20,6 +20,11 @@ export function sha256Hex(value: string): string {
  * Keyed hash with a purpose label, so a hashed IP in one table can never be
  * matched against a hashed value from another context.
  */
+/** A URL-safe secret derived from APP_SECRET: the same input always gives the same token. */
+export function hmacToken(purpose: string, value: string): string {
+  return createHmac('sha256', appSecret()).update(`${purpose}\u0000${value}`, 'utf8').digest('base64url');
+}
+
 export function hmacHex(purpose: string, value: string): string {
   return createHmac('sha256', appSecret()).update(`${purpose}\u0000${value}`, 'utf8').digest('hex');
 }

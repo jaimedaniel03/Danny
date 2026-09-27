@@ -122,8 +122,8 @@ export function SiteFooter() {
             get out of debt.
           </p>
           <p>
-            Photos are licensed stock images used for illustration. The people shown are models,
-            not our clients or team.
+            Photos are licensed stock images used for illustration. The people shown are not our
+            clients or team.
           </p>
           <p>
             © {year} {legalEntity ? `${businessName()}. All Set Check is a brand of ${legalEntity.value.name}.` : 'All Set Check.'}

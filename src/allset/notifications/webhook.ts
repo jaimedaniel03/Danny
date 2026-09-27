@@ -39,34 +39,68 @@ interface ResendEvent {
   readonly data?: { readonly email_id?: unknown; readonly bounce?: { readonly message?: unknown } };
 }
 
-export type WebhookOutcome = 'updated' | 'ignored' | 'unknown_message';
+export type WebhookOutcome = 'updated' | 'stale' | 'ignored' | 'duplicate' | 'unknown_message';
 
-export async function applyDeliveryEvent(sql: Sql, event: ResendEvent): Promise<WebhookOutcome> {
-  const type = typeof event.type === 'string' ? event.type : '';
+/**
+ * Where each event may move a row from. Events can arrive twice or out of
+ * order, so a later state is never overwritten by an earlier one: a
+ * "delayed" that arrives after "delivered" changes nothing.
+ */
+const TRANSITIONS: Record<string, { readonly to: string; readonly from: readonly string[]; readonly reason: string | null }> = {
+  'email.delivery_delayed': { to: 'delayed', from: ['sending', 'sent'], reason: 'The provider accepted the message but delivery is delayed.' },
+  'email.delivered': { to: 'delivered', from: ['sending', 'sent', 'delayed'], reason: null },
+  'email.bounced': { to: 'bounced', from: ['sending', 'sent', 'delayed'], reason: 'The message bounced; check the recipient address.' },
+  'email.failed': { to: 'failed', from: ['sending', 'sent', 'delayed'], reason: 'The provider could not deliver the message.' },
+};
+
+class UnknownMessage extends Error {}
+
+/**
+ * Apply one verified delivery event exactly once. The event id is recorded in
+ * the same transaction as the change; if the message isn't known yet (the
+ * webhook beat our own write), nothing is recorded and the caller answers
+ * with an error so the provider retries later.
+ */
+export async function applyDeliveryEvent(sql: Sql, event: ResendEvent, eventId: string): Promise<WebhookOutcome> {
+  const type = typeof event.type === 'string' ? event.type.slice(0, 64) : '';
   const messageId = typeof event.data?.email_id === 'string' ? event.data.email_id : null;
-  if (!messageId) return 'ignored';
+  if (!messageId || !eventId) return 'ignored';
 
-  let rows: readonly unknown[];
-  if (type === 'email.delivered') {
-    rows = await sql`
-      update allset.notifications
-      set status = 'delivered', delivered_at = now(), updated_at = now()
-      where provider_message_id = ${messageId} and status in ('sent', 'sending')
-      returning id`;
-  } else if (type === 'email.bounced' || type === 'email.complained' || type === 'email.failed') {
-    const reason =
-      type === 'email.complained'
-        ? 'The recipient marked the alert as spam.'
-        : type === 'email.failed'
-          ? 'The provider could not deliver the message.'
-          : 'The message bounced; check the recipient address.';
-    rows = await sql`
-      update allset.notifications
-      set status = 'bounced', last_error = ${reason}, updated_at = now()
-      where provider_message_id = ${messageId}
-      returning id`;
-  } else {
-    return 'ignored';
+  try {
+    return await sql.begin(async (tx) => {
+      const fresh = await tx`
+        insert into allset.webhook_events (event_id, event_type) values (${eventId.slice(0, 100)}, ${type})
+        on conflict (event_id) do nothing
+        returning event_id`;
+      if (fresh.length === 0) return 'duplicate' as const;
+
+      const [row] = await tx<{ id: string; status: string }[]>`
+        select id, status from allset.notifications where provider_message_id = ${messageId} for update`;
+      if (!row) throw new UnknownMessage();
+
+      if (type === 'email.complained') {
+        // It was delivered; the recipient then flagged it. Keep the state, say what happened.
+        await tx`
+          update allset.notifications
+          set last_error = 'The recipient marked this alert as spam.', updated_at = now()
+          where id = ${row.id}`;
+        return 'updated' as const;
+      }
+      const transition = TRANSITIONS[type];
+      if (!transition) return 'ignored' as const;
+      if (!transition.from.includes(row.status)) return 'stale' as const;
+      await tx`
+        update allset.notifications
+        set status = ${transition.to},
+            last_error = ${transition.reason},
+            delivered_at = ${transition.to === 'delivered' ? tx`now()` : tx`delivered_at`},
+            delayed_at = ${transition.to === 'delayed' ? tx`now()` : tx`delayed_at`},
+            updated_at = now()
+        where id = ${row.id}`;
+      return 'updated' as const;
+    });
+  } catch (error) {
+    if (error instanceof UnknownMessage) return 'unknown_message';
+    throw error;
   }
-  return rows.length > 0 ? 'updated' : 'unknown_message';
 }

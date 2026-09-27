@@ -17,12 +17,14 @@ import {
 export const metadata: Metadata = { title: 'Alerts' };
 
 const STATUS_TEXT: Record<string, string> = {
-  pending: 'Waiting to send',
+  pending: 'Queued',
   sending: 'Sending',
-  sent: 'Accepted by the email provider',
-  delivered: 'Delivered',
+  sent: 'Accepted by the email provider — delivery not yet confirmed',
+  delayed: 'Delivery delayed — the provider is still trying',
+  delivered: 'Delivered (confirmed by the provider)',
   bounced: 'Bounced',
   failed: 'Failed',
+  canceled: 'Canceled before sending',
 };
 
 const KIND_TEXT: Record<string, string> = {
@@ -88,7 +90,7 @@ export default async function AlertsPage() {
           <ul role="list" className="stack">
             {recipients.map((r) => (
               <li key={r.id} className="inline-form">
-                <span style={{ flex: '1 1 16rem' }}>
+                <span className="inline-form__grow">
                   <strong>{r.email}</strong>
                   <br />
                   <span className="muted">
@@ -123,7 +125,7 @@ export default async function AlertsPage() {
           Check that alerts arrive
         </h2>
         <p>
-          {health.pending} waiting · {health.failed} failed or bounced
+          {health.pending} queued · {health.awaitingDelivery} accepted, awaiting delivery confirmation · {health.failed} failed or bounced
           {health.lastFailureReason ? ` · last problem: ${health.lastFailureReason}` : ''}
         </p>
         <div className="inline-form">

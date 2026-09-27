@@ -61,9 +61,20 @@ export const LIMITS = {
   inquiryPerIpShort: { bucket: 'inquiry-ip-10m', max: 5, windowSeconds: 600 },
   inquiryPerIpDay: { bucket: 'inquiry-ip-day', max: 20, windowSeconds: 86_400 },
   inquiryPerEmailHour: { bucket: 'inquiry-email-1h', max: 4, windowSeconds: 3_600 },
+  // Sign-in. Every attempt counts, successful or not, so a parallel burst
+  // can't slip under a limit. Windows are fixed and short: nothing here locks
+  // an account for longer than one window.
   loginPerIp: { bucket: 'login-ip-15m', max: 20, windowSeconds: 900 },
-  // Counts every attempt, successful or not, so parallel bursts can't slip under it.
-  loginPerEmail: { bucket: 'login-email-15m', max: 10, windowSeconds: 900 },
+  // Attempts on an account from browsers it has never fully signed in on.
+  // An attacker can exhaust this one; it doesn't touch the owner's devices.
+  loginPerAccountNewDevice: { bucket: 'login-account-15m', max: 10, windowSeconds: 900 },
+  // Attempts from one remembered device (its own budget).
+  loginPerDevice: { bucket: 'login-device-15m', max: 10, windowSeconds: 900 },
+  // Second-step codes, per account. Reaching this needs the password already.
+  mfaPerStaff: { bucket: 'mfa-staff-15m', max: 20, windowSeconds: 900 },
+  // Recovery codes: rarer, and limited separately so they can't be sprayed.
+  recoveryPerStaff: { bucket: 'recovery-staff-1h', max: 5, windowSeconds: 3_600 },
+  mfaEnrollPerStaff: { bucket: 'mfa-enroll-15m', max: 10, windowSeconds: 900 },
   passwordChangePerStaff: { bucket: 'password-change-15m', max: 5, windowSeconds: 900 },
   exportPerStaff: { bucket: 'export-staff-1h', max: 10, windowSeconds: 3_600 },
   setupPerIp: { bucket: 'setup-ip-1h', max: 10, windowSeconds: 3_600 },

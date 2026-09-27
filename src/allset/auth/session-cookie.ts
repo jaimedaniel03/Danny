@@ -74,10 +74,15 @@ export const currentActor = cache(async (): Promise<Actor | null> => {
   return lookupSession(db(), token);
 });
 
-/** For pages: redirect to sign-in when there is no valid session. */
-export async function requireActor(returnTo = '/admin'): Promise<Actor> {
+/**
+ * For pages: redirect to sign-in when there is no valid session, and to
+ * two-step setup when the session hasn't passed the second step. Only the
+ * setup page itself passes `allowUnverified`.
+ */
+export async function requireActor(returnTo = '/admin', options: { allowUnverified?: boolean } = {}): Promise<Actor> {
   const actor = await currentActor();
   if (!actor) redirect(`/admin/login?next=${encodeURIComponent(safeReturnPath(returnTo))}`);
+  if (!actor.mfaVerified && !options.allowUnverified) redirect('/admin/two-step');
   return actor;
 }
 
@@ -89,10 +94,58 @@ export async function requireOwnerPage(permission: OwnerPermission, returnTo: st
 }
 
 /** For server actions: throw rather than redirect, so the action can report it. */
-export async function actorForAction(): Promise<Actor> {
+export async function actorForAction(options: { allowUnverified?: boolean } = {}): Promise<Actor> {
   const actor = await currentActor();
   if (!actor) throw new PermissionError('Your session has ended. Sign in again to continue.');
+  if (!actor.mfaVerified && !options.allowUnverified) {
+    throw new PermissionError('Finish setting up two-step sign-in first.');
+  }
   return actor;
+}
+
+/** For route handlers and non-desk code: a fully signed-in staff member, or null. */
+export async function verifiedActor(): Promise<Actor | null> {
+  const actor = await currentActor();
+  return actor?.mfaVerified ? actor : null;
+}
+
+// ── Second-step and device cookies ───────────────────────────────────────
+
+/** Between a right password and a right code. Five minutes, this browser only. */
+export const MFA_COOKIE = isProduction() ? '__Host-asc_mfa' : 'asc_mfa';
+/** Marks a browser that completed a full sign-in (its own sign-in attempt budget). */
+export const DEVICE_COOKIE = isProduction() ? '__Host-asc_device' : 'asc_device';
+
+async function setCookie(name: string, value: string, expiresAt: Date, sameSite: 'lax' | 'strict'): Promise<void> {
+  const jar = await cookies();
+  jar.set(name, value, {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite,
+    path: '/',
+    expires: expiresAt,
+    maxAge: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)),
+  });
+}
+
+export async function setMfaCookie(token: string, expiresAt: Date): Promise<void> {
+  await setCookie(MFA_COOKIE, token, expiresAt, 'strict');
+}
+
+export async function clearMfaCookie(): Promise<void> {
+  await setCookie(MFA_COOKIE, '', new Date(0), 'strict');
+}
+
+export async function readMfaToken(): Promise<string | null> {
+  return (await cookies()).get(MFA_COOKIE)?.value ?? null;
+}
+
+export async function setDeviceCookie(token: string, expiresAt: Date): Promise<void> {
+  await setCookie(DEVICE_COOKIE, token, expiresAt, 'strict');
+}
+
+export async function readDeviceToken(): Promise<string | null> {
+  return (await cookies()).get(DEVICE_COOKIE)?.value ?? null;
 }
 
 /** Only same-site admin paths are valid post-login destinations. */

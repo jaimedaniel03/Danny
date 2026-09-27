@@ -61,8 +61,14 @@ create table allset.staff_users (
   invite_token_hash     text unique,
   invite_expires_at     timestamptz,
   is_active             boolean not null default true,
-  failed_login_count    integer not null default 0,
-  locked_until          timestamptz,
+  -- Two-step sign-in (TOTP). Secrets are encrypted with a key derived from
+  -- APP_SECRET (AES-256-GCM): a database read alone never yields one, and
+  -- rotating APP_SECRET means everyone re-enrolls.
+  mfa_secret_enc        text,
+  mfa_pending_secret_enc text,
+  mfa_enabled_at        timestamptz,
+  -- Last accepted TOTP time step, so a code can never be used twice.
+  mfa_last_step         bigint,
   last_login_at         timestamptz,
   created_by            uuid references allset.staff_users (id) on delete set null,
   created_at            timestamptz not null default now(),
@@ -81,11 +87,51 @@ create table allset.staff_sessions (
   last_seen_at          timestamptz not null default now(),
   expires_at            timestamptz not null,
   ip_hash               text,
-  user_agent            text check (user_agent is null or char_length(user_agent) <= 256)
+  user_agent            text check (user_agent is null or char_length(user_agent) <= 256),
+  -- Null until the second step is done. Such a session can only reach the
+  -- two-step setup page, never the lead desk.
+  mfa_verified_at       timestamptz
 );
 
 create index staff_sessions_staff_idx on allset.staff_sessions (staff_id);
 create index staff_sessions_expiry_idx on allset.staff_sessions (expires_at);
+
+-- Browsers that completed a full sign-in. A remembered device keeps its own
+-- attempt budget, so an attacker hammering an account from elsewhere cannot
+-- lock its owner out.
+create table allset.staff_devices (
+  id                    uuid primary key default gen_random_uuid(),
+  token_hash            text not null unique,
+  staff_id              uuid not null references allset.staff_users (id) on delete cascade,
+  created_at            timestamptz not null default now(),
+  last_used_at          timestamptz not null default now(),
+  expires_at            timestamptz not null
+);
+
+create index staff_devices_staff_idx on allset.staff_devices (staff_id);
+
+-- Between a correct password and a correct second-step code. Short-lived,
+-- single-use, and limited in attempts.
+create table allset.staff_mfa_challenges (
+  id                    uuid primary key default gen_random_uuid(),
+  token_hash            text not null unique,
+  staff_id              uuid not null references allset.staff_users (id) on delete cascade,
+  device_id             uuid references allset.staff_devices (id) on delete set null,
+  attempts              integer not null default 0,
+  created_at            timestamptz not null default now(),
+  expires_at            timestamptz not null
+);
+
+-- One-time codes for when the authenticator is lost. Hashes only.
+create table allset.staff_recovery_codes (
+  id                    uuid primary key default gen_random_uuid(),
+  staff_id              uuid not null references allset.staff_users (id) on delete cascade,
+  code_hash             text not null unique,
+  created_at            timestamptz not null default now(),
+  used_at               timestamptz
+);
+
+create index staff_recovery_codes_staff_idx on allset.staff_recovery_codes (staff_id);
 
 -- ── Leads ───────────────────────────────────────────────────────────────────
 --
@@ -100,6 +146,8 @@ create table allset.leads (
   email                 text not null check (char_length(email) between 3 and 254),
   email_normalized      text not null check (char_length(email_normalized) between 3 and 254),
   zip                   text not null check (zip ~ '^[0-9]{5}$'),
+  -- The state the person says they live in; eligibility is checked against it.
+  state                 text not null check (state ~ '^[A-Z]{2}$'),
   contact_method        text not null check (contact_method in ('email', 'phone', 'text')),
   phone_e164            text check (phone_e164 is null or phone_e164 ~ '^\+1[2-9][0-9]{2}[2-9][0-9]{6}$'),
   coverage_interest     text check (coverage_interest in ('life', 'health', 'both', 'not_sure')),
@@ -116,6 +164,10 @@ create table allset.leads (
   needs_review          boolean not null default false,
   -- The email or phone matches someone who asked not to be contacted.
   suppression_match     boolean not null default false,
+  -- Made-up details entered on an access-protected preview. Never real people.
+  is_synthetic          boolean not null default false,
+  -- When the person withdrew consent (asked us to stop).
+  consent_withdrawn_at  timestamptz,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   last_submitted_at     timestamptz not null default now(),
@@ -163,6 +215,10 @@ create table allset.inquiries (
   consent_text          text not null,
   consent_version       text not null,
   consented_at          timestamptz not null,
+  -- The channels the person agreed to be contacted on: the method they chose.
+  consent_channels      text[] not null check (
+                          cardinality(consent_channels) between 1 and 3
+                          and consent_channels <@ array['email', 'phone', 'text']::text[]),
   source_path           text not null check (char_length(source_path) <= 200),
   ip_hash               text,
   user_agent            text check (user_agent is null or char_length(user_agent) <= 256),
@@ -250,6 +306,9 @@ create trigger audit_events_append_only
 create table allset.contact_suppressions (
   value_hash            text primary key check (char_length(value_hash) <= 128),
   kind                  text not null check (kind in ('email', 'phone')),
+  -- Why the entry exists. Only an explicit request to stop creates one; a
+  -- documented, counsel-approved retention basis is the only other reason.
+  basis                 text not null check (basis in ('explicit_opt_out', 'counsel_approved_retention')),
   created_at            timestamptz not null default now(),
   created_by            uuid references allset.staff_users (id) on delete set null
 );
@@ -294,10 +353,14 @@ create table allset.notifications (
   kind                  text not null check (kind in ('lead_received', 'recipient_confirmation', 'test_alert')),
   lead_id               uuid references allset.leads (id) on delete set null,
   recipient_id          uuid not null references allset.notification_recipients (id) on delete cascade,
-  -- pending → sending → sent (provider accepted) → delivered | bounced
-  --                   ↘ failed (gave up, or provider rejected)
+  -- pending (queued) → sending → sent (the provider accepted it; that is not
+  -- delivery) → delayed → delivered | bounced
+  --                     ↘ pending again (retryable, with backoff)
+  --                     ↘ failed (gave up, or the provider refused it)
+  -- canceled: withdrawn before sending (the person opted out, or the lead
+  -- was deleted).
   status                text not null default 'pending' check (status in (
-                          'pending', 'sending', 'sent', 'delivered', 'bounced', 'failed')),
+                          'pending', 'sending', 'sent', 'delayed', 'delivered', 'bounced', 'failed', 'canceled')),
   attempts              integer not null default 0,
   next_attempt_at       timestamptz not null default now(),
   -- Sanitized reason. Never contains lead data.
@@ -309,11 +372,23 @@ create table allset.notifications (
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   sent_at               timestamptz,
+  delayed_at            timestamptz,
   delivered_at          timestamptz
 );
 
 create index notifications_due_idx on allset.notifications (status, next_attempt_at);
 create index notifications_created_idx on allset.notifications (created_at desc);
+create index notifications_lead_idx on allset.notifications (lead_id) where lead_id is not null;
+
+-- Delivery webhooks already processed, by the provider's event id. Webhooks
+-- are retried and can arrive twice or out of order; each is applied once.
+create table allset.webhook_events (
+  event_id              text primary key check (char_length(event_id) <= 100),
+  event_type            text not null check (char_length(event_type) <= 64),
+  received_at           timestamptz not null default now()
+);
+
+create index webhook_events_received_idx on allset.webhook_events (received_at);
 
 -- ── Grants and row-level security ───────────────────────────────────────────
 
@@ -325,8 +400,9 @@ declare
   t text;
 begin
   foreach t in array array[
-    'staff_users', 'staff_sessions', 'leads', 'inquiries', 'lead_notes',
-    'audit_events', 'rate_limits', 'notification_recipients', 'notifications',
+    'staff_users', 'staff_sessions', 'staff_devices', 'staff_mfa_challenges',
+    'staff_recovery_codes', 'leads', 'inquiries', 'lead_notes', 'audit_events',
+    'rate_limits', 'notification_recipients', 'notifications', 'webhook_events',
     'contact_suppressions'
   ]
   loop

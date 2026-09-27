@@ -656,3 +656,9 @@ fieldset {
     border-color: ButtonText;
   }
 }
+
+/* Photos keep their intrinsic aspect ratio from the width/height attributes. */
+.photo__img {
+  width: 100%;
+  height: auto;
+}

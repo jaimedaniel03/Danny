@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { currentActor } from '@/allset/auth/session-cookie';
+import { verifiedActor } from '@/allset/auth/session-cookie';
 import { can, PermissionError } from '@/allset/auth/roles';
 import { db } from '@/allset/db/client';
 import { exportLeads } from '@/allset/leads/export';
@@ -25,7 +25,8 @@ export async function POST(request: Request): Promise<Response> {
   if (!isSameOrigin(request)) {
     return new NextResponse('Cross-site export refused.', { status: 403, headers: NO_STORE });
   }
-  const actor = await currentActor();
+  // Both sign-in steps done; a half-finished session can't export.
+  const actor = await verifiedActor();
   if (!actor) return new NextResponse('Sign in to export.', { status: 401, headers: NO_STORE });
   if (!can(actor, 'lead.export')) return new NextResponse('Only an owner can export leads.', { status: 403, headers: NO_STORE });
 

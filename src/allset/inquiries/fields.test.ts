@@ -6,6 +6,7 @@ const valid: InquiryValues = {
   fullName: '  María   José O’Neil-Díaz ',
   email: 'Maria@Example.com',
   zip: '60601-1234',
+  state: 'IL',
   contactMethod: 'email',
   coverageInterest: 'both',
   consent: true,
@@ -27,7 +28,7 @@ describe('inquiry validation', () => {
     const result = validateInquiry('coverage', EMPTY_VALUES);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(Object.keys(result.errors).sort()).toEqual(['consent', 'contactMethod', 'coverageInterest', 'email', 'fullName', 'zip']);
+    expect(Object.keys(result.errors).sort()).toEqual(['consent', 'contactMethod', 'coverageInterest', 'email', 'fullName', 'state', 'zip']);
   });
 
   it('requires a phone number only for a call or text', () => {
@@ -93,5 +94,11 @@ describe('normalizers', () => {
     expect(normalizeZip('02134-0001')).toBe('02134');
     expect(normalizeZip('00000')).toBeNull();
     expect(normalizeZip('2134')).toBeNull();
+  });
+
+  it('requires a real US state (or DC) by postal code', () => {
+    expect(validateInquiry('coverage', { ...valid, state: '' })).toMatchObject({ ok: false, errors: { state: expect.stringMatching(/state/) } });
+    expect(validateInquiry('coverage', { ...valid, state: 'XX' })).toMatchObject({ ok: false });
+    expect(validateInquiry('coverage', { ...valid, state: 'DC' })).toMatchObject({ ok: true, inquiry: { state: 'DC' } });
   });
 });

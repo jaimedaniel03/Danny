@@ -1,30 +1,47 @@
 /**
- * Lead desk hardening, applied before any admin page renders:
+ * Applied before any page renders:
  *
- *  - A per-request nonce Content-Security-Policy with 'strict-dynamic', so
- *    only scripts this response itself authorized can run where personal
- *    data is displayed or collected (the lead desk, /contact and /team).
- *    Static public pages use a baseline policy from next.config.mjs.
- *  - No caching, no indexing.
- *  - A fast redirect to sign-in when there is no session cookie at all. This
- *    is a convenience; every page and action still verifies the session.
+ *  - Every HTML page gets a per-request nonce Content-Security-Policy with
+ *    'strict-dynamic': only scripts this response itself authorized can run.
+ *    There is no 'unsafe-inline' or 'unsafe-eval' for scripts in production,
+ *    and styles are limited to our own files and nonced <style> blocks.
+ *  - The lead desk is also never cached or indexed, and a request with no
+ *    session cookie at all is sent to sign-in. That redirect is a
+ *    convenience; every page and action still verifies the session.
+ *
+ * Pages are rendered per request (see the root layout), because a nonce
+ * only works if each response carries its own.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_ADMIN = ['/admin/login', '/admin/setup', '/admin/invite', '/admin/confirm-alert'];
 
-const HOST = /^[a-z0-9.-]+(:\d{1,5})?$/i;
-
 /**
- * The origin the visitor actually asked for. nextUrl can carry the server's
- * bind address (e.g. localhost) when self-hosted behind a proxy, and a
- * redirect there would lose the session cookie set on the real host.
+ * Where redirects point. A configured public address wins; otherwise the URL
+ * the platform resolved. Forwarded-host headers are never trusted here: off
+ * Vercel they are whatever the client sent.
  */
-function requestOrigin(request: NextRequest): string {
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '';
-  const proto = request.headers.get('x-forwarded-proto') === 'https' || request.nextUrl.protocol === 'https:' ? 'https' : 'http';
-  return HOST.test(host) ? `${proto}://${host}` : request.nextUrl.origin;
+function origin(request: NextRequest): string {
+  const configured = process.env['PUBLIC_BASE_URL']?.trim().replace(/\/+$/, '');
+  return configured || request.nextUrl.origin;
+}
+
+export function contentSecurityPolicy(nonce: string, options: { dev: boolean }): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${options.dev ? " 'unsafe-eval'" : ''}`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "object-src 'none'",
+    ...(options.dev ? [] : ['upgrade-insecure-requests']),
+  ].join('; ');
 }
 
 export function middleware(request: NextRequest): NextResponse {
@@ -32,55 +49,36 @@ export function middleware(request: NextRequest): NextResponse {
   const nonce = btoa(crypto.randomUUID());
   const dev = process.env.NODE_ENV !== 'production';
   const isAdmin = pathname === '/admin' || pathname.startsWith('/admin/');
+  const csp = contentSecurityPolicy(nonce, { dev });
 
-  const csp = [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "frame-ancestors 'none'",
-    "base-uri 'none'",
-    "form-action 'self'",
-    "object-src 'none'",
-  ].join('; ');
-
-  // The public pages that collect personal data (/contact, /team) are
-  // rendered per request, so they get the same nonce policy; everything
-  // else about them stays public (indexable, cacheable per their own headers).
-  if (!isAdmin) {
-    const headers = new Headers(request.headers);
-    headers.set('Content-Security-Policy', csp);
-    headers.set('x-nonce', nonce);
-    const res = NextResponse.next({ request: { headers } });
-    res.headers.set('Content-Security-Policy', csp);
-    return res;
-  }
-
-  const hasSession =
-    request.cookies.has('__Host-asc_session') || request.cookies.has('asc_session');
-  const isPublic = PUBLIC_ADMIN.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const hasSession = request.cookies.has('__Host-asc_session') || request.cookies.has('asc_session');
+  const isPublicAdmin = PUBLIC_ADMIN.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   let response: NextResponse;
-  if (!hasSession && !isPublic && pathname.startsWith('/admin')) {
+  if (isAdmin && !hasSession && !isPublicAdmin) {
     response = NextResponse.redirect(
-      new URL(`/admin/login?next=${encodeURIComponent(`${pathname}${search}`)}`, requestOrigin(request)),
+      new URL(`/admin/login?next=${encodeURIComponent(`${pathname}${search}`)}`, origin(request)),
     );
   } else {
     const headers = new Headers(request.headers);
-    // Next.js reads the nonce from this request header and stamps it on its own scripts.
+    // Next.js reads the nonce from this request header and stamps it on its own scripts and styles.
     headers.set('Content-Security-Policy', csp);
     headers.set('x-nonce', nonce);
     response = NextResponse.next({ request: { headers } });
   }
 
   response.headers.set('Content-Security-Policy', csp);
-  response.headers.set('Cache-Control', 'no-store, max-age=0');
-  response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  if (isAdmin) {
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  }
   return response;
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/admin', '/contact', '/team'],
+  // Every page. Not API routes (they return JSON, not documents), build
+  // assets, photos, or metadata files.
+  matcher: [
+    '/((?!api/|_next/static|_next/image|images/|favicon\\.ico|icon\\.svg|apple-icon\\.png|icon-|opengraph-image|twitter-image|robots\\.txt|sitemap\\.xml).*)',
+  ],
 };

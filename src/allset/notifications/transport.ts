@@ -24,6 +24,8 @@ export class DeliveryError extends Error {
     readonly reason: string,
     /** False when retrying cannot help (bad key, rejected address, no config). */
     readonly retryable: boolean,
+    /** From the provider's Retry-After header: wait at least this long. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(reason);
     this.name = 'DeliveryError';
@@ -60,6 +62,7 @@ class ResendTransport implements EmailTransport {
     }
 
     const retryable = response.status === 429 || response.status >= 500;
+    const retryAfter = retryable ? parseRetryAfter(response.headers.get('retry-after')) : null;
     const hint =
       response.status === 401 || response.status === 403
         ? 'The email API key was rejected.'
@@ -68,8 +71,27 @@ class ResendTransport implements EmailTransport {
           : retryable
             ? 'The email provider is busy or unavailable.'
             : 'The email provider refused the message.';
-    throw new DeliveryError(`${hint} (HTTP ${response.status})`, retryable);
+    throw new DeliveryError(`${hint} (HTTP ${response.status})`, retryable, retryAfter);
   }
+}
+
+/**
+ * Retry-After is either seconds or an HTTP date. Anything unparseable, in the
+ * past, or absurd is ignored (the outbox's own backoff still applies), and it
+ * is capped so a bad header can't park an alert for days.
+ */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  let seconds: number;
+  if (/^\d+$/.test(trimmed)) seconds = Number(trimmed);
+  else {
+    const at = Date.parse(trimmed);
+    if (Number.isNaN(at)) return null;
+    seconds = Math.ceil((at - now) / 1000);
+  }
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.min(seconds, 6 * 60 * 60);
 }
 
 class UnconfiguredTransport implements EmailTransport {
