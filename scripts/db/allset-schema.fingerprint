@@ -1,0 +1,344 @@
+column audit_events.action text NO default=-
+column audit_events.actor_id uuid YES default=-
+column audit_events.actor_label text YES default=-
+column audit_events.details jsonb NO default='{}'::jsonb
+column audit_events.entity_id uuid YES default=-
+column audit_events.entity_ref text YES default=-
+column audit_events.entity_type text YES default=-
+column audit_events.id bigint NO default=-
+column audit_events.occurred_at timestamp with time zone NO default=now()
+column contact_suppressions.basis text NO default=-
+column contact_suppressions.created_at timestamp with time zone NO default=now()
+column contact_suppressions.created_by uuid YES default=-
+column contact_suppressions.kind text NO default=-
+column contact_suppressions.value_hash text NO default=-
+column inquiries.consent_channels ARRAY NO default=-
+column inquiries.consent_text text NO default=-
+column inquiries.consent_version text NO default=-
+column inquiries.consented_at timestamp with time zone NO default=-
+column inquiries.created_at timestamp with time zone NO default=now()
+column inquiries.id uuid NO default=gen_random_uuid()
+column inquiries.idempotency_key uuid NO default=-
+column inquiries.ip_hash text YES default=-
+column inquiries.kind text NO default=-
+column inquiries.lead_id uuid NO default=-
+column inquiries.payload jsonb NO default=-
+column inquiries.reference text NO default=-
+column inquiries.source_path text NO default=-
+column inquiries.user_agent text YES default=-
+column lead_notes.author_id uuid YES default=-
+column lead_notes.body text NO default=-
+column lead_notes.created_at timestamp with time zone NO default=now()
+column lead_notes.id uuid NO default=gen_random_uuid()
+column lead_notes.lead_id uuid NO default=-
+column leads.assigned_to uuid YES default=-
+column leads.closed_at timestamp with time zone YES default=-
+column leads.consent_withdrawn_at timestamp with time zone YES default=-
+column leads.contact_method text NO default=-
+column leads.coverage_interest text YES default=-
+column leads.created_at timestamp with time zone NO default=now()
+column leads.email text NO default=-
+column leads.email_normalized text NO default=-
+column leads.follow_up_on date YES default=-
+column leads.full_name text NO default=-
+column leads.id uuid NO default=gen_random_uuid()
+column leads.is_synthetic boolean NO default=false
+column leads.kind text NO default=-
+column leads.last_activity_at timestamp with time zone NO default=now()
+column leads.last_submitted_at timestamp with time zone NO default=now()
+column leads.licensing_status text YES default=-
+column leads.needs_review boolean NO default=false
+column leads.phone_e164 text YES default=-
+column leads.state text NO default=-
+column leads.status text NO default='new'::text
+column leads.submission_count integer NO default=1
+column leads.suppression_match boolean NO default=false
+column leads.updated_at timestamp with time zone NO default=now()
+column leads.zip text NO default=-
+column notification_recipients.added_by uuid YES default=-
+column notification_recipients.confirm_expires_at timestamp with time zone YES default=-
+column notification_recipients.confirm_token_hash text YES default=-
+column notification_recipients.confirmed_at timestamp with time zone YES default=-
+column notification_recipients.created_at timestamp with time zone NO default=now()
+column notification_recipients.disabled_at timestamp with time zone YES default=-
+column notification_recipients.email text NO default=-
+column notification_recipients.id uuid NO default=gen_random_uuid()
+column notifications.attempts integer NO default=0
+column notifications.created_at timestamp with time zone NO default=now()
+column notifications.delayed_at timestamp with time zone YES default=-
+column notifications.delivered_at timestamp with time zone YES default=-
+column notifications.id uuid NO default=gen_random_uuid()
+column notifications.kind text NO default=-
+column notifications.last_error text YES default=-
+column notifications.lead_id uuid YES default=-
+column notifications.next_attempt_at timestamp with time zone NO default=now()
+column notifications.provider_message_id text YES default=-
+column notifications.recipient_id uuid NO default=-
+column notifications.sent_at timestamp with time zone YES default=-
+column notifications.status text NO default='pending'::text
+column notifications.subject_ref text YES default=-
+column notifications.updated_at timestamp with time zone NO default=now()
+column rate_limits.bucket text NO default=-
+column rate_limits.hits integer NO default=1
+column rate_limits.key_hash text NO default=-
+column rate_limits.window_start timestamp with time zone NO default=-
+column staff_devices.created_at timestamp with time zone NO default=now()
+column staff_devices.expires_at timestamp with time zone NO default=-
+column staff_devices.id uuid NO default=gen_random_uuid()
+column staff_devices.last_used_at timestamp with time zone NO default=now()
+column staff_devices.staff_id uuid NO default=-
+column staff_devices.token_hash text NO default=-
+column staff_mfa_challenges.attempts integer NO default=0
+column staff_mfa_challenges.created_at timestamp with time zone NO default=now()
+column staff_mfa_challenges.device_id uuid YES default=-
+column staff_mfa_challenges.expires_at timestamp with time zone NO default=-
+column staff_mfa_challenges.id uuid NO default=gen_random_uuid()
+column staff_mfa_challenges.staff_id uuid NO default=-
+column staff_mfa_challenges.token_hash text NO default=-
+column staff_recovery_codes.code_hash text NO default=-
+column staff_recovery_codes.created_at timestamp with time zone NO default=now()
+column staff_recovery_codes.id uuid NO default=gen_random_uuid()
+column staff_recovery_codes.staff_id uuid NO default=-
+column staff_recovery_codes.used_at timestamp with time zone YES default=-
+column staff_sessions.created_at timestamp with time zone NO default=now()
+column staff_sessions.expires_at timestamp with time zone NO default=-
+column staff_sessions.id uuid NO default=gen_random_uuid()
+column staff_sessions.ip_hash text YES default=-
+column staff_sessions.last_seen_at timestamp with time zone NO default=now()
+column staff_sessions.mfa_verified_at timestamp with time zone YES default=-
+column staff_sessions.staff_id uuid NO default=-
+column staff_sessions.token_hash text NO default=-
+column staff_sessions.user_agent text YES default=-
+column staff_users.created_at timestamp with time zone NO default=now()
+column staff_users.created_by uuid YES default=-
+column staff_users.deactivated_at timestamp with time zone YES default=-
+column staff_users.display_name text NO default=-
+column staff_users.email text NO default=-
+column staff_users.id uuid NO default=gen_random_uuid()
+column staff_users.invite_expires_at timestamp with time zone YES default=-
+column staff_users.invite_token_hash text YES default=-
+column staff_users.is_active boolean NO default=true
+column staff_users.last_login_at timestamp with time zone YES default=-
+column staff_users.mfa_enabled_at timestamp with time zone YES default=-
+column staff_users.mfa_last_step bigint YES default=-
+column staff_users.mfa_pending_secret_enc text YES default=-
+column staff_users.mfa_secret_enc text YES default=-
+column staff_users.password_hash text YES default=-
+column staff_users.role text NO default=-
+column staff_users.updated_at timestamp with time zone NO default=now()
+column webhook_events.event_id text NO default=-
+column webhook_events.event_type text NO default=-
+column webhook_events.received_at timestamp with time zone NO default=now()
+constraint allset.audit_events audit_events_action_check c CHECKchar_lengthaction<=64
+constraint allset.audit_events audit_events_actor_id_fkey f FOREIGNKEYactor_idREFERENCESallset.staff_usersidONDELETERESTRICT
+constraint allset.audit_events audit_events_entity_ref_check c CHECKentity_refISNULLORchar_lengthentity_ref<=32
+constraint allset.audit_events audit_events_entity_type_check c CHECKentity_typeISNULLORchar_lengthentity_type<=32
+constraint allset.audit_events audit_events_pkey p PRIMARYKEYid
+constraint allset.contact_suppressions contact_suppressions_basis_check c CHECKbasis=ANYARRAY['explicit_opt_out'::text,'counsel_approved_retention'::text]
+constraint allset.contact_suppressions contact_suppressions_created_by_fkey f FOREIGNKEYcreated_byREFERENCESallset.staff_usersidONDELETESETNULL
+constraint allset.contact_suppressions contact_suppressions_kind_check c CHECKkind=ANYARRAY['email'::text,'phone'::text]
+constraint allset.contact_suppressions contact_suppressions_pkey p PRIMARYKEYvalue_hash
+constraint allset.contact_suppressions contact_suppressions_value_hash_check c CHECKchar_lengthvalue_hash<=128
+constraint allset.inquiries inquiries_consent_channels_check c CHECKcardinalityconsent_channels>=1ANDcardinalityconsent_channels<=3ANDconsent_channels<@ARRAY['email'::text,'phone'::text,'text'::text]
+constraint allset.inquiries inquiries_idempotency_key_key u UNIQUEidempotency_key
+constraint allset.inquiries inquiries_kind_check c CHECKkind=ANYARRAY['coverage'::text,'team'::text]
+constraint allset.inquiries inquiries_lead_id_fkey f FOREIGNKEYlead_idREFERENCESallset.leadsidONDELETECASCADE
+constraint allset.inquiries inquiries_pkey p PRIMARYKEYid
+constraint allset.inquiries inquiries_reference_check c CHECKreference~'^ASC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$'::text
+constraint allset.inquiries inquiries_reference_key u UNIQUEreference
+constraint allset.inquiries inquiries_source_path_check c CHECKchar_lengthsource_path<=200
+constraint allset.inquiries inquiries_user_agent_check c CHECKuser_agentISNULLORchar_lengthuser_agent<=256
+constraint allset.lead_notes lead_notes_author_id_fkey f FOREIGNKEYauthor_idREFERENCESallset.staff_usersidONDELETERESTRICT
+constraint allset.lead_notes lead_notes_body_check c CHECKchar_lengthbody>=1ANDchar_lengthbody<=4000
+constraint allset.lead_notes lead_notes_lead_id_fkey f FOREIGNKEYlead_idREFERENCESallset.leadsidONDELETECASCADE
+constraint allset.lead_notes lead_notes_pkey p PRIMARYKEYid
+constraint allset.leads closed_at_matches_status c CHECKstatus=ANYARRAY['closed_helped'::text,'closed_no_action'::text,'do_not_contact'::text]=closed_atISNOTNULL
+constraint allset.leads leads_assigned_to_fkey f FOREIGNKEYassigned_toREFERENCESallset.staff_usersidONDELETESETNULL
+constraint allset.leads leads_contact_method_check c CHECKcontact_method=ANYARRAY['email'::text,'phone'::text,'text'::text]
+constraint allset.leads leads_coverage_interest_check c CHECKcoverage_interest=ANYARRAY['life'::text,'health'::text,'both'::text,'not_sure'::text]
+constraint allset.leads leads_email_check c CHECKchar_lengthemail>=3ANDchar_lengthemail<=254
+constraint allset.leads leads_email_normalized_check c CHECKchar_lengthemail_normalized>=3ANDchar_lengthemail_normalized<=254
+constraint allset.leads leads_full_name_check c CHECKchar_lengthfull_name>=2ANDchar_lengthfull_name<=100
+constraint allset.leads leads_kind_check c CHECKkind=ANYARRAY['coverage'::text,'team'::text]
+constraint allset.leads leads_licensing_status_check c CHECKlicensing_status=ANYARRAY['licensed_life_health'::text,'licensed_other'::text,'studying'::text,'not_licensed'::text]
+constraint allset.leads leads_phone_e164_check c CHECKphone_e164ISNULLORphone_e164~'^\+1[2-9][0-9]{2}[2-9][0-9]{6}$'::text
+constraint allset.leads leads_pkey p PRIMARYKEYid
+constraint allset.leads leads_state_check c CHECKstate~'^[A-Z]{2}$'::text
+constraint allset.leads leads_status_check c CHECKstatus=ANYARRAY['new'::text,'contacted'::text,'meeting_scheduled'::text,'following_up'::text,'closed_helped'::text,'closed_no_action'::text,'do_not_contact'::text]
+constraint allset.leads leads_submission_count_check c CHECKsubmission_count>=1
+constraint allset.leads leads_zip_check c CHECKzip~'^[0-9]{5}$'::text
+constraint allset.leads phone_matches_method c CHECKcontact_method='email'::textORphone_e164ISNOTNULL
+constraint allset.leads qualifier_matches_kind c CHECKkind='coverage'::textANDcoverage_interestISNOTNULLANDlicensing_statusISNULLORkind='team'::textANDlicensing_statusISNOTNULLANDcoverage_interestISNULL
+constraint allset.notification_recipients notification_recipients_added_by_fkey f FOREIGNKEYadded_byREFERENCESallset.staff_usersidONDELETESETNULL
+constraint allset.notification_recipients notification_recipients_confirm_token_hash_key u UNIQUEconfirm_token_hash
+constraint allset.notification_recipients notification_recipients_email_check c CHECKchar_lengthemail>=3ANDchar_lengthemail<=254
+constraint allset.notification_recipients notification_recipients_pkey p PRIMARYKEYid
+constraint allset.notifications notifications_kind_check c CHECKkind=ANYARRAY['lead_received'::text,'recipient_confirmation'::text,'test_alert'::text]
+constraint allset.notifications notifications_last_error_check c CHECKlast_errorISNULLORchar_lengthlast_error<=300
+constraint allset.notifications notifications_lead_id_fkey f FOREIGNKEYlead_idREFERENCESallset.leadsidONDELETESETNULL
+constraint allset.notifications notifications_pkey p PRIMARYKEYid
+constraint allset.notifications notifications_provider_message_id_key u UNIQUEprovider_message_id
+constraint allset.notifications notifications_recipient_id_fkey f FOREIGNKEYrecipient_idREFERENCESallset.notification_recipientsidONDELETECASCADE
+constraint allset.notifications notifications_status_check c CHECKstatus=ANYARRAY['pending'::text,'sending'::text,'sent'::text,'delayed'::text,'delivered'::text,'bounced'::text,'failed'::text,'canceled'::text]
+constraint allset.rate_limits rate_limits_bucket_check c CHECKchar_lengthbucket<=64
+constraint allset.rate_limits rate_limits_key_hash_check c CHECKchar_lengthkey_hash<=128
+constraint allset.rate_limits rate_limits_pkey p PRIMARYKEYbucket,key_hash,window_start
+constraint allset.staff_devices staff_devices_pkey p PRIMARYKEYid
+constraint allset.staff_devices staff_devices_staff_id_fkey f FOREIGNKEYstaff_idREFERENCESallset.staff_usersidONDELETECASCADE
+constraint allset.staff_devices staff_devices_token_hash_key u UNIQUEtoken_hash
+constraint allset.staff_mfa_challenges staff_mfa_challenges_device_id_fkey f FOREIGNKEYdevice_idREFERENCESallset.staff_devicesidONDELETESETNULL
+constraint allset.staff_mfa_challenges staff_mfa_challenges_pkey p PRIMARYKEYid
+constraint allset.staff_mfa_challenges staff_mfa_challenges_staff_id_fkey f FOREIGNKEYstaff_idREFERENCESallset.staff_usersidONDELETECASCADE
+constraint allset.staff_mfa_challenges staff_mfa_challenges_token_hash_key u UNIQUEtoken_hash
+constraint allset.staff_recovery_codes staff_recovery_codes_code_hash_key u UNIQUEcode_hash
+constraint allset.staff_recovery_codes staff_recovery_codes_pkey p PRIMARYKEYid
+constraint allset.staff_recovery_codes staff_recovery_codes_staff_id_fkey f FOREIGNKEYstaff_idREFERENCESallset.staff_usersidONDELETECASCADE
+constraint allset.staff_sessions staff_sessions_pkey p PRIMARYKEYid
+constraint allset.staff_sessions staff_sessions_staff_id_fkey f FOREIGNKEYstaff_idREFERENCESallset.staff_usersidONDELETECASCADE
+constraint allset.staff_sessions staff_sessions_token_hash_key u UNIQUEtoken_hash
+constraint allset.staff_sessions staff_sessions_user_agent_check c CHECKuser_agentISNULLORchar_lengthuser_agent<=256
+constraint allset.staff_users staff_users_created_by_fkey f FOREIGNKEYcreated_byREFERENCESallset.staff_usersidONDELETESETNULL
+constraint allset.staff_users staff_users_display_name_check c CHECKchar_lengthdisplay_name>=1ANDchar_lengthdisplay_name<=80
+constraint allset.staff_users staff_users_email_check c CHECKchar_lengthemail>=3ANDchar_lengthemail<=254
+constraint allset.staff_users staff_users_invite_token_hash_key u UNIQUEinvite_token_hash
+constraint allset.staff_users staff_users_pkey p PRIMARYKEYid
+constraint allset.staff_users staff_users_role_check c CHECKrole=ANYARRAY['owner'::text,'staff'::text]
+constraint allset.webhook_events webhook_events_event_id_check c CHECKchar_lengthevent_id<=100
+constraint allset.webhook_events webhook_events_event_type_check c CHECKchar_lengthevent_type<=64
+constraint allset.webhook_events webhook_events_pkey p PRIMARYKEYevent_id
+function audit_append_only security_definer=false body_md5=9c46c416a348a4e1e57967e5bed71861
+function reject_update security_definer=false body_md5=5d5158cdcb01b137de311bbd3af600f3
+grant audit_events allset_app DELETE
+grant audit_events allset_app INSERT
+grant audit_events allset_app SELECT
+grant audit_events allset_app UPDATE
+grant audit_events_id_seq allset_app SELECT
+grant audit_events_id_seq allset_app USAGE
+grant contact_suppressions allset_app DELETE
+grant contact_suppressions allset_app INSERT
+grant contact_suppressions allset_app SELECT
+grant contact_suppressions allset_app UPDATE
+grant inquiries allset_app DELETE
+grant inquiries allset_app INSERT
+grant inquiries allset_app SELECT
+grant inquiries allset_app UPDATE
+grant lead_notes allset_app DELETE
+grant lead_notes allset_app INSERT
+grant lead_notes allset_app SELECT
+grant lead_notes allset_app UPDATE
+grant leads allset_app DELETE
+grant leads allset_app INSERT
+grant leads allset_app SELECT
+grant leads allset_app UPDATE
+grant notification_recipients allset_app DELETE
+grant notification_recipients allset_app INSERT
+grant notification_recipients allset_app SELECT
+grant notification_recipients allset_app UPDATE
+grant notifications allset_app DELETE
+grant notifications allset_app INSERT
+grant notifications allset_app SELECT
+grant notifications allset_app UPDATE
+grant rate_limits allset_app DELETE
+grant rate_limits allset_app INSERT
+grant rate_limits allset_app SELECT
+grant rate_limits allset_app UPDATE
+grant staff_devices allset_app DELETE
+grant staff_devices allset_app INSERT
+grant staff_devices allset_app SELECT
+grant staff_devices allset_app UPDATE
+grant staff_mfa_challenges allset_app DELETE
+grant staff_mfa_challenges allset_app INSERT
+grant staff_mfa_challenges allset_app SELECT
+grant staff_mfa_challenges allset_app UPDATE
+grant staff_recovery_codes allset_app DELETE
+grant staff_recovery_codes allset_app INSERT
+grant staff_recovery_codes allset_app SELECT
+grant staff_recovery_codes allset_app UPDATE
+grant staff_sessions allset_app DELETE
+grant staff_sessions allset_app INSERT
+grant staff_sessions allset_app SELECT
+grant staff_sessions allset_app UPDATE
+grant staff_users allset_app DELETE
+grant staff_users allset_app INSERT
+grant staff_users allset_app SELECT
+grant staff_users allset_app UPDATE
+grant webhook_events allset_app DELETE
+grant webhook_events allset_app INSERT
+grant webhook_events allset_app SELECT
+grant webhook_events allset_app UPDATE
+index audit_events_entity_idx CREATE INDEX audit_events_entity_idx ON allset.audit_events USING btree (entity_type, entity_id, occurred_at DESC)
+index audit_events_pkey CREATE UNIQUE INDEX audit_events_pkey ON allset.audit_events USING btree (id)
+index audit_events_time_idx CREATE INDEX audit_events_time_idx ON allset.audit_events USING btree (occurred_at DESC)
+index contact_suppressions_created_idx CREATE INDEX contact_suppressions_created_idx ON allset.contact_suppressions USING btree (created_at)
+index contact_suppressions_pkey CREATE UNIQUE INDEX contact_suppressions_pkey ON allset.contact_suppressions USING btree (value_hash)
+index inquiries_idempotency_key_key CREATE UNIQUE INDEX inquiries_idempotency_key_key ON allset.inquiries USING btree (idempotency_key)
+index inquiries_lead_idx CREATE INDEX inquiries_lead_idx ON allset.inquiries USING btree (lead_id, created_at DESC)
+index inquiries_pkey CREATE UNIQUE INDEX inquiries_pkey ON allset.inquiries USING btree (id)
+index inquiries_reference_key CREATE UNIQUE INDEX inquiries_reference_key ON allset.inquiries USING btree (reference)
+index lead_notes_lead_idx CREATE INDEX lead_notes_lead_idx ON allset.lead_notes USING btree (lead_id, created_at DESC)
+index lead_notes_pkey CREATE UNIQUE INDEX lead_notes_pkey ON allset.lead_notes USING btree (id)
+index leads_activity_idx CREATE INDEX leads_activity_idx ON allset.leads USING btree (last_activity_at)
+index leads_assigned_idx CREATE INDEX leads_assigned_idx ON allset.leads USING btree (assigned_to, status)
+index leads_follow_up_idx CREATE INDEX leads_follow_up_idx ON allset.leads USING btree (follow_up_on) WHERE (follow_up_on IS NOT NULL)
+index leads_one_open_per_person CREATE UNIQUE INDEX leads_one_open_per_person ON allset.leads USING btree (kind, email_normalized) WHERE (closed_at IS NULL)
+index leads_pkey CREATE UNIQUE INDEX leads_pkey ON allset.leads USING btree (id)
+index leads_status_idx CREATE INDEX leads_status_idx ON allset.leads USING btree (status, created_at DESC)
+index notification_recipients_confirm_token_hash_key CREATE UNIQUE INDEX notification_recipients_confirm_token_hash_key ON allset.notification_recipients USING btree (confirm_token_hash)
+index notification_recipients_email_key CREATE UNIQUE INDEX notification_recipients_email_key ON allset.notification_recipients USING btree (lower(email))
+index notification_recipients_pkey CREATE UNIQUE INDEX notification_recipients_pkey ON allset.notification_recipients USING btree (id)
+index notifications_created_idx CREATE INDEX notifications_created_idx ON allset.notifications USING btree (created_at DESC)
+index notifications_due_idx CREATE INDEX notifications_due_idx ON allset.notifications USING btree (status, next_attempt_at)
+index notifications_lead_idx CREATE INDEX notifications_lead_idx ON allset.notifications USING btree (lead_id) WHERE (lead_id IS NOT NULL)
+index notifications_pkey CREATE UNIQUE INDEX notifications_pkey ON allset.notifications USING btree (id)
+index notifications_provider_message_id_key CREATE UNIQUE INDEX notifications_provider_message_id_key ON allset.notifications USING btree (provider_message_id)
+index rate_limits_pkey CREATE UNIQUE INDEX rate_limits_pkey ON allset.rate_limits USING btree (bucket, key_hash, window_start)
+index rate_limits_window_idx CREATE INDEX rate_limits_window_idx ON allset.rate_limits USING btree (window_start)
+index staff_devices_pkey CREATE UNIQUE INDEX staff_devices_pkey ON allset.staff_devices USING btree (id)
+index staff_devices_staff_idx CREATE INDEX staff_devices_staff_idx ON allset.staff_devices USING btree (staff_id)
+index staff_devices_token_hash_key CREATE UNIQUE INDEX staff_devices_token_hash_key ON allset.staff_devices USING btree (token_hash)
+index staff_mfa_challenges_pkey CREATE UNIQUE INDEX staff_mfa_challenges_pkey ON allset.staff_mfa_challenges USING btree (id)
+index staff_mfa_challenges_token_hash_key CREATE UNIQUE INDEX staff_mfa_challenges_token_hash_key ON allset.staff_mfa_challenges USING btree (token_hash)
+index staff_recovery_codes_code_hash_key CREATE UNIQUE INDEX staff_recovery_codes_code_hash_key ON allset.staff_recovery_codes USING btree (code_hash)
+index staff_recovery_codes_pkey CREATE UNIQUE INDEX staff_recovery_codes_pkey ON allset.staff_recovery_codes USING btree (id)
+index staff_recovery_codes_staff_idx CREATE INDEX staff_recovery_codes_staff_idx ON allset.staff_recovery_codes USING btree (staff_id)
+index staff_sessions_expiry_idx CREATE INDEX staff_sessions_expiry_idx ON allset.staff_sessions USING btree (expires_at)
+index staff_sessions_pkey CREATE UNIQUE INDEX staff_sessions_pkey ON allset.staff_sessions USING btree (id)
+index staff_sessions_staff_idx CREATE INDEX staff_sessions_staff_idx ON allset.staff_sessions USING btree (staff_id)
+index staff_sessions_token_hash_key CREATE UNIQUE INDEX staff_sessions_token_hash_key ON allset.staff_sessions USING btree (token_hash)
+index staff_users_email_key CREATE UNIQUE INDEX staff_users_email_key ON allset.staff_users USING btree (lower(email))
+index staff_users_invite_token_hash_key CREATE UNIQUE INDEX staff_users_invite_token_hash_key ON allset.staff_users USING btree (invite_token_hash)
+index staff_users_pkey CREATE UNIQUE INDEX staff_users_pkey ON allset.staff_users USING btree (id)
+index webhook_events_pkey CREATE UNIQUE INDEX webhook_events_pkey ON allset.webhook_events USING btree (event_id)
+index webhook_events_received_idx CREATE INDEX webhook_events_received_idx ON allset.webhook_events USING btree (received_at)
+policy audit_events allset_app_only ALL allset_app using=true check=true
+policy contact_suppressions allset_app_only ALL allset_app using=true check=true
+policy inquiries allset_app_only ALL allset_app using=true check=true
+policy lead_notes allset_app_only ALL allset_app using=true check=true
+policy leads allset_app_only ALL allset_app using=true check=true
+policy notification_recipients allset_app_only ALL allset_app using=true check=true
+policy notifications allset_app_only ALL allset_app using=true check=true
+policy rate_limits allset_app_only ALL allset_app using=true check=true
+policy staff_devices allset_app_only ALL allset_app using=true check=true
+policy staff_mfa_challenges allset_app_only ALL allset_app using=true check=true
+policy staff_recovery_codes allset_app_only ALL allset_app using=true check=true
+policy staff_sessions allset_app_only ALL allset_app using=true check=true
+policy staff_users allset_app_only ALL allset_app using=true check=true
+policy webhook_events allset_app_only ALL allset_app using=true check=true
+rls audit_events enabled=true forced=true
+rls contact_suppressions enabled=true forced=true
+rls inquiries enabled=true forced=true
+rls lead_notes enabled=true forced=true
+rls leads enabled=true forced=true
+rls notification_recipients enabled=true forced=true
+rls notifications enabled=true forced=true
+rls rate_limits enabled=true forced=true
+rls staff_devices enabled=true forced=true
+rls staff_mfa_challenges enabled=true forced=true
+rls staff_recovery_codes enabled=true forced=true
+rls staff_sessions enabled=true forced=true
+rls staff_users enabled=true forced=true
+rls webhook_events enabled=true forced=true
+schema-grant allset allset_app USAGE
+trigger allset.audit_events audit_events_append_only CREATE TRIGGER audit_events_append_only BEFORE DELETE OR UPDATE ON allset.audit_events FOR EACH ROW EXECUTE FUNCTION allset.audit_append_only()
+trigger allset.inquiries inquiries_no_update CREATE TRIGGER inquiries_no_update BEFORE UPDATE ON allset.inquiries FOR EACH ROW EXECUTE FUNCTION allset.reject_update()
+trigger allset.lead_notes lead_notes_no_update CREATE TRIGGER lead_notes_no_update BEFORE UPDATE ON allset.lead_notes FOR EACH ROW EXECUTE FUNCTION allset.reject_update()

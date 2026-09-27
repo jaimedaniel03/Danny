@@ -305,6 +305,27 @@ test('staff see unassigned leads, claim one, and work it', async ({ browser }) =
   await expect(staff.getByRole('button', { name: /Delete this lead/ })).toHaveCount(0);
 });
 
+test('a server action replayed from another site is refused and changes nothing', async () => {
+  // Same signed-in browser, same form, same action id: only the Origin says another site sent it.
+  await openLead(staff, leads[0]!.reference);
+  const probe = `Cross-site probe ${Date.now()}`;
+  await staff.route('**/admin/leads/**', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    return route.continue({ headers: { ...route.request().headers(), origin: 'https://evil.example' } });
+  });
+  const answer = staff.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/admin/leads/'));
+  await staff.getByRole('textbox', { name: 'Add a note' }).fill(probe);
+  await staff.getByRole('button', { name: 'Save note' }).click();
+  const response = await answer;
+  expect(response.status()).toBeGreaterThanOrEqual(400);
+  await staff.unroute('**/admin/leads/**');
+
+  await staff.reload();
+  await expect(staff.getByText(probe)).toHaveCount(0);
+  const stored = await db()`select count(*)::int as n from allset.lead_notes where body = ${probe}`;
+  expect(stored[0]!.n).toBe(0);
+});
+
 test('a lead assigned to someone else is invisible to staff', async ({ browser }) => {
   leads.push(await submitLead(browser, 'Owner Family'));
   await openLead(owner, leads[1]!.reference);

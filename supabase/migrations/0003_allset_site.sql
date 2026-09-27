@@ -392,6 +392,27 @@ create index webhook_events_received_idx on allset.webhook_events (received_at);
 
 -- ── Grants and row-level security ───────────────────────────────────────────
 
+-- Default privileges elsewhere in the cluster (Supabase grants its API roles
+-- rights on new tables in some setups) must not reach these tables, so every
+-- table and sequence starts from nothing before the one grant below.
+revoke all on all tables in schema allset from public;
+revoke all on all sequences in schema allset from public;
+-- Trigger functions run when their trigger fires, whoever holds EXECUTE; nobody needs to call them.
+revoke all on all functions in schema allset from public;
+do $$
+declare
+  r text;
+begin
+  foreach r in array array['anon', 'authenticated', 'service_role'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on all tables in schema allset from %I', r);
+      execute format('revoke all on all sequences in schema allset from %I', r);
+      execute format('revoke all on all functions in schema allset from %I', r);
+    end if;
+  end loop;
+end
+$$;
+
 grant select, insert, update, delete on all tables in schema allset to allset_app;
 grant usage, select on all sequences in schema allset to allset_app;
 

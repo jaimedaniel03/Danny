@@ -118,9 +118,15 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
 - Secrets live in server-only modules (`src/allset/env.ts`, `import 'server-only'`).
 - Logs carry no personal data (`src/allset/log.ts` withholds PII-named fields
   and never logs error messages that can quote values).
-- Admin pages send `noindex`, `no-store`, and a nonce-based CSP. `/contact`
-  and `/team` (the pages that collect personal data) get the same per-request
-  nonce policy; other public pages use a static baseline policy.
+- Every page gets a per-request nonce CSP from `src/middleware.ts`
+  (`script-src 'self' 'nonce-…' 'strict-dynamic'`, `style-src 'self' 'nonce-…'`,
+  no `unsafe-inline` or `unsafe-eval` in production, `frame-ancestors 'none'`,
+  `form-action 'self'`). Admin pages also send `noindex` and `no-store`.
+- Cross-site request forgery: server actions carry Next.js's own Origin check
+  (a replayed action with a foreign Origin is refused and changes nothing —
+  tested end to end); the one cookie-authenticated route handler (CSV export)
+  checks Origin itself (`src/allset/http.ts`); session cookies are
+  `SameSite=Lax`, so a cross-site POST arrives without them anyway.
 - Sign-in throttling is bounded, with no account lock an attacker can
   extend. Every attempt counts before any password work, against a
   per-connection limit (20 / 15 min) and a second budget. A browser that has
@@ -146,8 +152,12 @@ Tokens: `src/styles/tokens.css`. Shared components and states: `src/styles/base.
   either keep the originals or apply the new ones after confirming with the
   person.
 - Do-not-contact list (`allset.contact_suppressions`): keyed HMACs of the
-  email and phone of anyone marked "Do not contact", or deleted with "they
-  also asked us not to contact them". A later submission matching it is still
+  email and phone of anyone marked "Do not contact" (an explicit opt-out),
+  each with its basis recorded (`explicit_opt_out`, or
+  `counsel_approved_retention` once counsel documents one). Deleting a lead is
+  a separate act: it neither adds to nor removes from this list. Marking
+  "Do not contact" also records the withdrawal on the lead and cancels any
+  alert still queued for it. A later submission matching the list is still
   saved but flagged on the lead. Keyed by `APP_SECRET`: rotating that secret
   orphans the list.
 - New-inquiry alert emails stop at 60 per hour (leads still save; the audit
@@ -193,10 +203,55 @@ runtime.
 
 ### Database
 
-1. Apply `supabase/migrations/0003_allset_site.sql` (as `postgres`).
-2. Give the app role a password, out of band:
+Not provisioned yet (owner's call). When it is:
+
+1. Rehearse first, on a disposable Postgres ≥ 16:
+   `TEST_DATABASE_ADMIN_URL=… scripts/db/rehearse.sh` (CI runs this on every push).
+2. Take a backup of the target if it holds anything.
+3. Apply `supabase/migrations/0003_allset_site.sql` as `postgres`. It refuses
+   to run twice.
+4. Verify: `scripts/db/verify.sh '<postgres URL as postgres>'` must print
+   `VERIFY PASSED` (schema matches `scripts/db/allset-schema.fingerprint`;
+   the app role has no superuser, BYPASSRLS, role/db creation, memberships or
+   owned objects; no role but `allset_app` holds rights on these tables).
+5. Give the app role a password, out of band:
    `alter role allset_app login password '<generated>';`
-3. `DATABASE_URL=postgres://allset_app.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require`
+6. `DATABASE_URL=postgres://allset_app.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require`
+
+Rollback: before any real data, `drop schema allset cascade; drop role allset_app;`
+undoes the migration completely. After real data exists, restore from the
+backup instead (`pg_restore` of a `--schema=allset` dump needs `allset_app`
+to exist first); never drop the schema.
+
+#### Inventory
+
+Measured by applying the migration to Postgres 16.13 and reading the catalogs
+(the committed fingerprint is the full, machine-checked list).
+
+| Kind | What |
+|---|---|
+| Schema | `allset`. `USAGE` for `allset_app` only; revoked from `PUBLIC`, `anon`, `authenticated`. Keep it out of Supabase's exposed API schemas (the default list doesn't include it); even if added, the API roles have no rights here. |
+| Role | `allset_app`: created `NOLOGIN`; login and password are set out of band. Not superuser, no `BYPASSRLS`, owns nothing. |
+| Tables (14) | `staff_users`, `staff_sessions`, `staff_devices`, `staff_mfa_challenges`, `staff_recovery_codes`, `leads`, `inquiries`, `lead_notes`, `audit_events`, `rate_limits`, `notification_recipients`, `notifications`, `webhook_events`, `contact_suppressions` |
+| Grants | `allset_app`: `SELECT, INSERT, UPDATE, DELETE` on the 14 tables; `USAGE, SELECT` on `audit_events_id_seq`. Everything else revoked, including from Supabase's `anon`, `authenticated` and `service_role`. |
+| Row-level security | Enabled **and forced** on all 14 tables; one policy each, `allset_app_only` (all commands, role `allset_app`). Any other non-bypass role sees zero rows (tested per table). |
+| Functions | `reject_update()` (makes `inquiries` and `lead_notes` rows immutable); `audit_append_only()` (no updates to `audit_events`; deletes only past 3 years). `EXECUTE` revoked from `PUBLIC`; triggers still fire. |
+| Extensions | None. `gen_random_uuid()` is built into Postgres 13+. |
+| Jobs | No database-side jobs. Vercel cron (`vercel.json`), daily, `Authorization: Bearer $CRON_SECRET`: `/api/cron/notifications` (retry queued alerts) and `/api/cron/retention` (see Scheduled jobs). |
+| App dependency | postgres.js over `DATABASE_URL` through Supabase's transaction pooler (`prepare: false`), pool max 3 per instance. The app uses no Supabase API key (anon or service). |
+
+Who can still read every lead: roles with superuser or `BYPASSRLS` (on
+Supabase that includes `service_role` and the platform's admin roles;
+`verify.sh` lists exactly which). That's the platform's design; keep those
+credentials out of the app and off laptops.
+
+Isolation between staff (a staff member sees only their own and unassigned
+leads) is enforced in the application — every query in `src/allset/leads/`
+filters by the signed-in actor, and tests cover reads and writes across
+accounts — not by Postgres policies, because every query runs as the one app
+role. Moving it into RLS would mean setting the actor per transaction
+(`set_config('allset.staff_id', …, true)`); worth doing if the desk ever
+gets more than a handful of staff or a second app touches the schema.
 
 ### First owner
 

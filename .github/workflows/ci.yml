@@ -85,6 +85,19 @@ jobs:
       - name: Unit and database tests
         run: npx vitest run
 
+      # Applies the migration to a fresh database, checks it against the
+      # committed schema fingerprint and least-privilege rules, then backs it
+      # up and restores it and compares the two. Client tools must be >= the
+      # server's major version (16) for pg_dump to work.
+      - name: Migration and backup/restore rehearsal
+        run: |
+          if ! pg_dump --version 2>/dev/null | grep -Eq ' (1[6-9]|[2-9][0-9])\.'; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+            export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          fi
+          pg_dump --version
+          scripts/db/rehearse.sh
+
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
 
